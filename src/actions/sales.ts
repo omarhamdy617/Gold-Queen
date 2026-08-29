@@ -1,7 +1,7 @@
 "use server";
 import { db, schema } from "@/db";
 import { eq, and, desc } from "drizzle-orm";
-import { requirePermission, requireSession, logAudit, genCode } from "@/lib/auth";
+import { requirePermission, requireSession, logAudit, genCode, can } from "@/lib/auth";
 import { postCashByPaymentMethod, adjustStock, updateCustomerBalance, checkCreditLimit } from "@/lib/ops";
 import { revalidatePath } from "next/cache";
 
@@ -20,22 +20,33 @@ export async function createSalesInvoice(input: InvoiceInput) {
   await requirePermission("sales.create");
   const session = await requireSession();
 
+  if (!input.items || input.items.length === 0) {
+    throw new Error("لازم تضيف صنف واحد على الأقل في الفاتورة قبل الحفظ");
+  }
+
   const products = await db.select().from(schema.products);
   const productMap = new Map(products.map((p) => [p.id, p]));
 
   const subtotal = input.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
   const total = subtotal - input.discount;
 
-  if (input.customerId && input.paymentStatus !== "PAID") {
-    const [customer] = await db.select().from(schema.customers).where(eq(schema.customers.id, input.customerId));
-    if (customer) {
-      const unpaid = total - input.paidAmount;
-      const check = checkCreditLimit(customer, unpaid);
-      if (!check.ok) throw new Error(check.message);
-    }
+  // خصم أكبر من 10% من إجمالي الفاتورة يحتاج صلاحية خاصة
+  if (subtotal > 0 && input.discount / subtotal > 0.1) {
+    const allowed = await can("sales.discount.large");
+    if (!allowed) throw new Error("الخصم اللي حاطه أكبر من المسموح - محتاج صلاحية \"منح خصم كبير\"");
   }
 
   const result = await db.transaction(async (tx) => {
+    // فحص حد الائتمان بيتم *جوه* الـ transaction وبعد قفل صف العميل، عشان نمنع تجاوز الحد لو فيه فاتورتين بتتسجلوا لنفس العميل في نفس اللحظة
+    if (input.customerId && input.paymentStatus !== "PAID") {
+      const [customer] = await tx.select().from(schema.customers).where(eq(schema.customers.id, input.customerId)).for("update");
+      if (customer) {
+        const unpaid = total - input.paidAmount;
+        const check = checkCreditLimit(customer, unpaid);
+        if (!check.ok) throw new Error(check.message);
+      }
+    }
+
     const code = genCode("INV");
     const [invoice] = await tx
       .insert(schema.salesInvoices)
