@@ -15,51 +15,58 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
 
   return (
     <div className="space-y-6">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          start(async () => {
-            await createUser(form);
-            setForm({ username: "", fullName: "", password: "", roleId: roles[0]?.id || "" });
-            router.refresh();
-          });
-        }}
-        className="bg-white rounded-xl shadow p-4 grid sm:grid-cols-5 gap-3 items-end"
-      >
-        <input required placeholder="اسم المستخدم (للدخول)" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className="border rounded px-3 py-2 text-sm" />
-        <input required placeholder="الاسم بالكامل" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} className="border rounded px-3 py-2 text-sm" />
-        <input required type="password" placeholder="كلمة المرور" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="border rounded px-3 py-2 text-sm" />
-        <select value={form.roleId} onChange={(e) => setForm({ ...form, roleId: e.target.value })} className="border rounded px-3 py-2 text-sm">
-          {roles.map((r) => <option key={r.id} value={r.id}>{roleLabel(r.name)}</option>)}
-        </select>
-        <button disabled={pending} className="bg-gold text-white rounded-lg px-4 py-2 text-sm">+ إضافة موظف</button>
-      </form>
+      <div className="app-card p-4 space-y-3">
+        <h2 className="font-bold">إضافة موظف جديد</h2>
+        <p className="text-xs text-muted">بعد ما تضيف الموظف، هتفتحلك تلقائيًا شاشة الصلاحيات التفصيلية عشان تحدد بالظبط كل خطوة/إجراء يقدر يعمله - مش مجرد وصف وظيفي عام.</p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            start(async () => {
+              const u = await createUser(form);
+              setForm({ username: "", fullName: "", password: "", roleId: roles[0]?.id || "" });
+              setEditingUser(u.id);
+              router.refresh();
+            });
+          }}
+          className="grid sm:grid-cols-5 gap-3 items-end"
+        >
+          <input required placeholder="اسم المستخدم (للدخول)" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className="border rounded px-3 py-2 text-sm" />
+          <input required placeholder="الاسم بالكامل" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} className="border rounded px-3 py-2 text-sm" />
+          <input required type="password" placeholder="كلمة المرور" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="border rounded px-3 py-2 text-sm" />
+          <select value={form.roleId} onChange={(e) => setForm({ ...form, roleId: e.target.value })} className="border rounded px-3 py-2 text-sm">
+            {roles.map((r) => <option key={r.id} value={r.id}>{roleLabel(r.name)}</option>)}
+          </select>
+          <button disabled={pending} className="bg-primary text-white rounded-lg px-4 py-2 text-sm">+ إضافة موظف</button>
+        </form>
+      </div>
 
       <form
         onSubmit={(e) => { e.preventDefault(); start(async () => { if (newRoleName) { await createCustomRole(newRoleName); setNewRoleName(""); router.refresh(); } }); }}
         className="flex gap-2"
       >
-        <input placeholder="اسم دور جديد (مخصص)" value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)} className="border rounded px-3 py-2 text-sm" />
-        <button className="bg-neutral-800 text-white rounded-lg px-4 py-2 text-sm">+ إضافة دور</button>
+        <input placeholder="اسم دور جديد (مخصص) - مفيد لو عايز تبني صلاحيات من الصفر" value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)} className="border rounded px-3 py-2 text-sm flex-1" />
+        <button className="bg-navy text-white rounded-lg px-4 py-2 text-sm">+ إضافة دور</button>
       </form>
 
-      <div className="bg-white rounded-xl shadow overflow-x-auto">
+      <div className="app-card overflow-x-auto">
         <table className="w-full text-sm text-right">
-          <thead><tr className="border-b text-neutral-500"><th className="p-3">اسم المستخدم</th><th>الاسم</th><th>الدور</th><th>الحالة</th><th></th></tr></thead>
+          <thead><tr className="border-b text-muted"><th className="p-3">اسم المستخدم</th><th>الاسم</th><th>الدور</th><th>الحالة</th><th></th></tr></thead>
           <tbody>
             {users.map((u) => (
               <React.Fragment key={u.id}>
                 <tr className="border-b last:border-0">
                   <td className="p-3 font-mono text-xs">{u.username}</td>
                   <td>{u.fullName}</td>
-                  <td>{roleLabel(u.roleName)}</td>
+                  <td><span className="badge badge-blue">{roleLabel(u.roleName)}</span></td>
                   <td>
                     <button onClick={() => start(async () => { await toggleUserActive(u.id, !u.active); router.refresh(); })} className={`text-xs rounded px-2 py-1 ${u.active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                       {u.active ? "نشط" : "موقوف"}
                     </button>
                   </td>
                   <td className="flex gap-2 py-2">
-                    <button onClick={() => setEditingUser(editingUser === u.id ? null : u.id)} className="text-xs text-gold">الصلاحيات</button>
+                    <button onClick={() => setEditingUser(editingUser === u.id ? null : u.id)} className="text-xs text-primary font-medium">
+                      {editingUser === u.id ? "إخفاء الصلاحيات" : "الصلاحيات التفصيلية"}
+                    </button>
                     <button onClick={() => setPwUser(pwUser === u.id ? null : u.id)} className="text-xs text-blue-600">كلمة المرور</button>
                     <button onClick={() => { if (confirm("مسح المستخدم؟")) start(async () => { await deleteUser(u.id); router.refresh(); }); }} className="text-xs text-red-600">حذف</button>
                   </td>
@@ -69,7 +76,7 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
                     <td colSpan={5} className="p-3 bg-neutral-50">
                       <div className="flex gap-2 items-center">
                         <input type="password" placeholder="كلمة المرور الجديدة" value={newPw} onChange={(e) => setNewPw(e.target.value)} className="border rounded px-3 py-1.5 text-sm" />
-                        <button onClick={() => start(async () => { if (newPw) { await updateUserPassword(u.id, newPw); setNewPw(""); setPwUser(null); } })} className="bg-gold text-white text-xs rounded px-3 py-1.5">حفظ</button>
+                        <button onClick={() => start(async () => { if (newPw) { await updateUserPassword(u.id, newPw); setNewPw(""); setPwUser(null); } })} className="bg-primary text-white text-xs rounded px-3 py-1.5">حفظ</button>
                       </div>
                     </td>
                   </tr>
