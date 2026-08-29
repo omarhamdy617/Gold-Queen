@@ -6,9 +6,12 @@ import { useRouter } from "next/navigation";
 const LABELS: Record<string, string> = { PREPARING: "قيد التجهيز", SHIPPED: "في الشحن", DELIVERED: "تم التسليم", RETURNED: "مرتجع" };
 const COLORS: Record<string, string> = { PREPARING: "bg-neutral-200", SHIPPED: "bg-blue-200", DELIVERED: "bg-green-200", RETURNED: "bg-red-200" };
 
-export default function StatusControl({ orderId, status }: { orderId: string; status: string }) {
+export default function StatusControl({ orderId, status, canEdit = true }: { orderId: string; status: string; canEdit?: boolean }) {
   const [pending, start] = useTransition();
   const router = useRouter();
+  if (!canEdit) {
+    return <span className={`text-xs rounded px-2 py-1 ${COLORS[status]}`}>{LABELS[status]}</span>;
+  }
   return (
     <select
       value={status}
