@@ -42,6 +42,10 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
 
       <ProductForm categories={categories} />
 
+      <div className="app-card p-4 text-sm text-muted leading-relaxed">
+        💡 <b>الفرق بين الشاشات:</b> "المنتجات" هي بطاقة الصنف نفسه (اسمه، سعره، باركوده) وبتتسجل <b>مرة واحدة بس</b>. أما "المشتريات" فهي كل عملية شراء فعلية بتحصل من مورد (بتزوّد الكمية في المخزون وبتحدّث متوسط التكلفة تلقائيًا). يعني: تسجّل المنتج مرة، وبعدين كل مرة تشتريه تسجّل "مشترى جديد" لنفس المنتج ده من غير ما تعيد إنشاءه.
+      </div>
+
       <form className="flex gap-2">
         <input
           name="q"
@@ -71,7 +75,16 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
           <tbody>
             {products.map((p) => (
               <tr key={p.id} className={`border-b last:border-0 ${p.totalStock <= p.reorderPoint ? "bg-red-50" : ""}`}>
-                <td className="p-3 font-medium">{p.name}{p.requiresSerial && <span className="mr-1 text-xs text-gold">(سيريال)</span>}</td>
+                <td className="p-3 font-medium">
+                  <div className="flex items-center gap-2">
+                    {p.imageUrl ? (
+                      <img src={p.imageUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+                    ) : (
+                      <div className="w-8 h-8 rounded bg-background flex-shrink-0" />
+                    )}
+                    <span>{p.name}{p.requiresSerial && <span className="mr-1 text-xs text-gold">(سيريال)</span>}</span>
+                  </div>
+                </td>
                 <td className="font-mono text-xs">{p.barcode}</td>
                 <td>{money(p.wholesalePrice)}</td>
                 <td>{money(p.retailPrice)}</td>
