@@ -50,6 +50,6 @@ export async function getFinancialPosition() {
     inventoryValue,
     byLocation: Object.values(byLocation),
     inTransitCount: inTransitOrders.length,
-    netPosition: totalCash + totalReceivable + inventoryValue - totalPayable,
+    netPosition: totalCash + totalReceivable + inventoryValue + totalConsignmentValue - totalPayable,
   };
 }
