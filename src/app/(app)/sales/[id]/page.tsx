@@ -2,6 +2,7 @@ import { getInvoice } from "@/actions/sales";
 import { money, dateAr } from "@/lib/format";
 import { notFound } from "next/navigation";
 import PrintButton from "@/components/PrintButton";
+import PrintHeader from "@/components/PrintHeader";
 
 export default async function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -13,16 +14,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
     <div className="max-w-2xl mx-auto space-y-4">
       <div className="no-print flex justify-end"><PrintButton /></div>
       <div className="bg-white rounded-xl shadow p-8 print:shadow-none">
-        <div className="flex items-center justify-between border-b pb-4 mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gold">جولد كوين</h1>
-            <p className="text-xs text-neutral-500">فاتورة بيع</p>
-          </div>
-          <div className="text-left">
-            <p className="font-mono text-sm">{invoice.code}</p>
-            <p className="text-xs text-neutral-500">{dateAr(invoice.createdAt)}</p>
-          </div>
-        </div>
+        <PrintHeader subtitle="فاتورة بيع" code={invoice.code} date={dateAr(invoice.createdAt)} />
 
         <div className="mb-4 text-sm">
           <p><span className="text-neutral-500">العميل: </span>{customer?.name || "عميل نقدي"}</p>
