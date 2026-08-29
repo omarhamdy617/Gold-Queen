@@ -2,7 +2,7 @@
 import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit } from "@/lib/auth";
-import { adjustStock, updateConsignmentBalance } from "@/lib/ops";
+import { adjustStock, updateConsignmentBalance, postCashByPaymentMethod } from "@/lib/ops";
 import { revalidatePath } from "next/cache";
 
 export async function listEmployees() {
@@ -58,12 +58,21 @@ export async function giveConsignment(input: {
   return result;
 }
 
-export async function settleConsignment(consignmentId: string, amount: number) {
+export async function settleConsignment(consignmentId: string, amount: number, paymentMethodId: string) {
   await requirePermission("consignments.manage");
+  const session = await requireSession();
   await db.transaction(async (tx) => {
     await updateConsignmentBalance(tx, consignmentId, -amount);
+    await postCashByPaymentMethod(tx, paymentMethodId, "COLLECTION_IN", amount, {
+      note: "تسوية عهدة",
+      refType: "Consignment",
+      refId: consignmentId,
+      createdById: session.userId,
+    });
   });
+  await logAudit({ action: "SETTLE", entityType: "Consignment", entityId: consignmentId, after: { amount } });
   revalidatePath("/consignments");
+  revalidatePath("/cash");
 }
 
 export async function getConsignmentItems(consignmentId: string) {
