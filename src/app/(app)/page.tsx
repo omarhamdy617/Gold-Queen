@@ -21,46 +21,62 @@ export default async function DashboardPage() {
       )}
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card label="مبيعات اليوم" value={money(d.salesToday)} color="bg-blue-600" />
+        <Card label="مبيعات اليوم" value={money(d.salesToday)} icon="🧾" accent="gold" />
         <Card
           label="مبيعات الشهر"
           value={money(d.salesMonth)}
-          color="bg-blue-700"
+          icon="📅"
+          accent="navy"
           sub={d.salesChangePct !== null ? `${d.salesChangePct >= 0 ? "▲" : "▼"} ${Math.abs(d.salesChangePct).toFixed(1)}% عن الشهر السابق` : undefined}
         />
-        <Card label="إجمالي الربح (هامش)" value={money(d.grossProfit)} color="bg-green-600" />
-        <Card label="صافي الربح بعد المصروفات" value={money(d.netProfit)} color="bg-green-700" />
-        <Card label="إجمالي الكاش" value={money(d.totalCash)} color="bg-amber-600" />
-        <Card label="مستحق لي" value={money(d.totalReceivable)} color="bg-purple-600" />
-        <Card label="مستحق عليّ" value={money(d.totalPayable)} color="bg-red-600" />
-        <Card label="قيمة المخزون" value={money(d.inventoryValue)} color="bg-neutral-700" />
+        <Card label="إجمالي الربح (هامش)" value={money(d.grossProfit)} icon="📈" accent="emerald" />
+        <Card label="صافي الربح بعد المصروفات" value={money(d.netProfit)} icon="💎" accent="emerald" />
+        <Card label="إجمالي الكاش" value={money(d.totalCash)} icon="💰" accent="gold" />
+        <Card label="مستحق لي" value={money(d.totalReceivable)} icon="⬅️" accent="navy" />
+        <Card label="مستحق عليّ" value={money(d.totalPayable)} icon="➡️" accent="rose" />
+        <Card label="قيمة المخزون" value={money(d.inventoryValue)} icon="📦" accent="slate" />
       </div>
 
-      <div className="bg-white rounded-xl shadow p-4">
-        <h2 className="font-bold mb-3">أداء الموظفين هذا الشهر</h2>
-        <table className="w-full text-sm text-right">
-          <thead><tr className="border-b text-neutral-500"><th className="py-2">الموظف</th><th>عدد الفواتير</th><th>إجمالي المبيعات</th><th>التحصيلات</th><th></th></tr></thead>
-          <tbody>
-            {d.employeePerf.map((e) => (
-              <tr key={e.userId} className="border-b last:border-0">
-                <td className="py-2">{e.userName}</td><td>{num(e.salesCount)}</td><td>{money(e.salesTotal)}</td><td>{money(e.collections)}</td>
-                <td><Link href="/settings/users" className="text-xs text-gold">إدارة الصلاحيات</Link></td>
-              </tr>
-            ))}
-            {d.employeePerf.length === 0 && <tr><td colSpan={5} className="py-6 text-center text-neutral-400">لا توجد مبيعات بعد هذا الشهر</td></tr>}
-          </tbody>
-        </table>
+      <div className="app-card p-5">
+        <h2 className="font-bold mb-4 flex items-center gap-2">
+          <span className="text-gold">🏆</span> أداء الموظفين هذا الشهر
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-right">
+            <thead><tr><th className="py-2">الموظف</th><th>عدد الفواتير</th><th>إجمالي المبيعات</th><th>التحصيلات</th><th></th></tr></thead>
+            <tbody>
+              {d.employeePerf.map((e) => (
+                <tr key={e.userId}>
+                  <td className="py-2.5 font-medium">{e.userName}</td><td>{num(e.salesCount)}</td><td>{money(e.salesTotal)}</td><td>{money(e.collections)}</td>
+                  <td><Link href="/settings/users" className="text-xs text-gold hover:text-gold-dark">إدارة الصلاحيات</Link></td>
+                </tr>
+              ))}
+              {d.employeePerf.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-muted">لا توجد مبيعات بعد هذا الشهر</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
 }
 
-function Card({ label, value, color, sub }: { label: string; value: string; color: string; sub?: string }) {
+const ACCENTS: Record<string, string> = {
+  gold: "bg-gradient-to-br from-gold-light to-gold-dark",
+  navy: "bg-gradient-to-br from-neutral-700 to-navy",
+  emerald: "bg-gradient-to-br from-emerald-500 to-emerald-700",
+  rose: "bg-gradient-to-br from-rose-500 to-rose-700",
+  slate: "bg-gradient-to-br from-slate-500 to-slate-700",
+};
+
+function Card({ label, value, icon, accent, sub }: { label: string; value: string; icon: string; accent: keyof typeof ACCENTS; sub?: string }) {
   return (
-    <div className={`rounded-xl shadow p-4 text-white ${color}`}>
-      <div className="text-xs opacity-90">{label}</div>
-      <div className="text-xl font-bold mt-1">{value}</div>
-      {sub && <div className="text-xs opacity-80 mt-1">{sub}</div>}
+    <div className="app-card p-4 relative overflow-hidden">
+      <div className={`absolute -top-4 -left-4 w-16 h-16 rounded-2xl rotate-12 opacity-90 flex items-end justify-start p-2 text-lg ${ACCENTS[accent]}`}>
+        <span className="rotate-[-12deg]">{icon}</span>
+      </div>
+      <div className="text-xs text-muted mt-1">{label}</div>
+      <div className="text-xl font-bold mt-1 text-foreground">{value}</div>
+      {sub && <div className="text-xs text-muted mt-1">{sub}</div>}
     </div>
   );
 }
