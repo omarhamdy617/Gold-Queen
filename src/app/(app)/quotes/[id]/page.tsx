@@ -2,6 +2,7 @@ import { getQuote } from "@/actions/sales";
 import { money, dateAr } from "@/lib/format";
 import { notFound } from "next/navigation";
 import PrintButton from "@/components/PrintButton";
+import PrintHeader from "@/components/PrintHeader";
 import WhatsAppShareButton from "./WhatsAppShareButton";
 
 export default async function QuoteDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -19,16 +20,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
         <PrintButton />
       </div>
       <div className="bg-white rounded-xl shadow p-8 print:shadow-none">
-        <div className="flex items-center justify-between border-b pb-4 mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gold">جولد كوين</h1>
-            <p className="text-xs text-neutral-500">عرض سعر</p>
-          </div>
-          <div className="text-left">
-            <p className="font-mono text-sm">{quote.code}</p>
-            <p className="text-xs text-neutral-500">{dateAr(quote.createdAt)}</p>
-          </div>
-        </div>
+        <PrintHeader subtitle="عرض سعر" code={quote.code} date={dateAr(quote.createdAt)} />
         {quote.customerName && <p className="mb-4 text-sm"><span className="text-neutral-500">العميل: </span>{quote.customerName}</p>}
         <table className="w-full text-sm mb-4">
           <thead><tr className="border-b text-neutral-500 text-right"><th className="py-2">الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead>
