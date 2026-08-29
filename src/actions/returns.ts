@@ -9,8 +9,11 @@ export async function createReturnRequest(input: {
   kind: "SALE_RETURN" | "PURCHASE_RETURN";
   invoiceId?: string;
   customerId?: string;
+  supplierId?: string;
   items: { productId: string; quantity: number; unitPrice: number; invoiceItemId?: string }[];
+  reasonCategory?: string;
   reason?: string;
+  imageUrl?: string;
 }) {
   await requirePermission("returns.create");
   const session = await requireSession();
@@ -23,9 +26,12 @@ export async function createReturnRequest(input: {
       kind: input.kind,
       invoiceId: input.invoiceId,
       customerId: input.customerId,
+      supplierId: input.supplierId,
       totalAmount: totalAmount.toFixed(2),
       status: "PENDING",
+      reasonCategory: input.reasonCategory,
       reason: input.reason,
+      imageUrl: input.imageUrl,
       requestedById: session.userId,
     })
     .returning();
@@ -80,6 +86,19 @@ export async function approveReturn(id: string, locationId: string, refundPaymen
       if (refundPaymentMethodId) {
         await postCashByPaymentMethod(tx, refundPaymentMethodId, "RETURN_OUT", Number(ret.totalAmount), {
           note: `استرداد مرتجع ${ret.code}`,
+          refType: "ReturnRequest",
+          refId: ret.id,
+          createdById: session.userId,
+        });
+      }
+    }
+    if (ret.kind === "PURCHASE_RETURN" && ret.supplierId) {
+      // بيقل اللي علينا للمورد بمقدار قيمة المرتجع
+      await updateSupplierBalance(tx, ret.supplierId, -Number(ret.totalAmount));
+      if (refundPaymentMethodId) {
+        // لو المورد رجعلنا فلوس كاش بدل ما يخصم من رصيده
+        await postCashByPaymentMethod(tx, refundPaymentMethodId, "RETURN_IN", Number(ret.totalAmount), {
+          note: `استرداد نقدي من مورد - مرتجع ${ret.code}`,
           refType: "ReturnRequest",
           refId: ret.id,
           createdById: session.userId,
