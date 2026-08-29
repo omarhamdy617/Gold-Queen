@@ -21,7 +21,7 @@ export default async function DashboardPage() {
       )}
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card label="مبيعات اليوم" value={money(d.salesToday)} icon="🧾" accent="gold" />
+        <Card label="مبيعات اليوم" value={money(d.salesToday)} icon="🧾" accent="primary" />
         <Card
           label="مبيعات الشهر"
           value={money(d.salesMonth)}
@@ -32,14 +32,14 @@ export default async function DashboardPage() {
         <Card label="إجمالي الربح (هامش)" value={money(d.grossProfit)} icon="📈" accent="emerald" />
         <Card label="صافي الربح بعد المصروفات" value={money(d.netProfit)} icon="💎" accent="emerald" />
         <Card label="إجمالي الكاش" value={money(d.totalCash)} icon="💰" accent="gold" />
-        <Card label="مستحق لي" value={money(d.totalReceivable)} icon="⬅️" accent="navy" />
+        <Card label="مستحق لي" value={money(d.totalReceivable)} icon="⬅️" accent="primary" />
         <Card label="مستحق عليّ" value={money(d.totalPayable)} icon="➡️" accent="rose" />
         <Card label="قيمة المخزون" value={money(d.inventoryValue)} icon="📦" accent="slate" />
       </div>
 
       <div className="app-card p-5">
         <h2 className="font-bold mb-4 flex items-center gap-2">
-          <span className="text-gold">🏆</span> أداء الموظفين هذا الشهر
+          <span className="text-primary">🏆</span> أداء الموظفين هذا الشهر
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-right">
@@ -48,7 +48,7 @@ export default async function DashboardPage() {
               {d.employeePerf.map((e) => (
                 <tr key={e.userId}>
                   <td className="py-2.5 font-medium">{e.userName}</td><td>{num(e.salesCount)}</td><td>{money(e.salesTotal)}</td><td>{money(e.collections)}</td>
-                  <td><Link href="/settings/users" className="text-xs text-gold hover:text-gold-dark">إدارة الصلاحيات</Link></td>
+                  <td><Link href="/settings/users" className="text-xs text-primary hover:text-primary-dark">إدارة الصلاحيات</Link></td>
                 </tr>
               ))}
               {d.employeePerf.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-muted">لا توجد مبيعات بعد هذا الشهر</td></tr>}
@@ -61,6 +61,7 @@ export default async function DashboardPage() {
 }
 
 const ACCENTS: Record<string, string> = {
+  primary: "bg-gradient-to-br from-primary-light to-primary-dark",
   gold: "bg-gradient-to-br from-gold-light to-gold-dark",
   navy: "bg-gradient-to-br from-neutral-700 to-navy",
   emerald: "bg-gradient-to-br from-emerald-500 to-emerald-700",
