@@ -52,8 +52,9 @@ export async function createPurchase(input: PurchaseInput) {
         .values({ purchaseId: purchase.id, productId: item.productId, quantity: item.quantity, unitCost: item.unitCost.toFixed(2) })
         .returning();
 
-      await adjustStock(tx, item.productId, input.locationId, item.quantity);
+      // مهم: نحسب متوسط التكلفة المرجح على أساس الكمية القديمة *قبل* إضافة الكمية الجديدة للمخزون
       await updateWeightedAvgCost(tx, item.productId, item.quantity, item.unitCost);
+      await adjustStock(tx, item.productId, input.locationId, item.quantity);
 
       await tx.insert(schema.supplierProductPrices).values({
         supplierId: input.supplierId,
