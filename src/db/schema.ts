@@ -151,6 +151,7 @@ export const products = pgTable("products", {
   sku: varchar("sku", { length: 100 }).notNull().unique(),
   barcode: varchar("barcode", { length: 100 }).notNull().unique(),
   name: varchar("name", { length: 250 }).notNull(),
+  imageUrl: text("image_url"),
   categoryId: text("category_id").references(() => categories.id),
   requiresSerial: boolean("requires_serial").notNull().default(false),
   warrantyMonths: integer("warranty_months"),
@@ -418,20 +419,47 @@ export const quoteItems = pgTable("quote_items", {
 // --------------------------------------------------------------------------
 // ORDERS / SHIPPING
 // --------------------------------------------------------------------------
+export const couriers = pgTable("couriers", {
+  id: cuid(),
+  name: varchar("name", { length: 150 }).notNull(),
+  phone: varchar("phone", { length: 50 }),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const shippingCompanies = pgTable("shipping_companies", {
+  id: cuid(),
+  name: varchar("name", { length: 150 }).notNull(),
+  phone: varchar("phone", { length: 50 }),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const orders = pgTable("orders", {
   id: cuid(),
   code: varchar("code", { length: 50 }).notNull().unique(),
   invoiceId: text("invoice_id").unique().references(() => salesInvoices.id),
   customerId: text("customer_id").references(() => customers.id),
+  customerName: varchar("customer_name", { length: 200 }).notNull().default(""),
+  customerPhone: varchar("customer_phone", { length: 50 }).notNull().default(""),
+  customerPhone2: varchar("customer_phone2", { length: 50 }),
+  address: text("address"),
+  governorate: varchar("governorate", { length: 100 }),
+  orderNotes: text("order_notes"),
+  deliveryNotes: text("delivery_notes"),
   source: orderSourceEnum("source").notNull().default("OTHER"),
-  shippingMethod: shippingMethodEnum("shipping_method").notNull().default("OTHER"),
+  shippingMethod: shippingMethodEnum("shipping_method"),
+  shippingCompanyId: text("shipping_company_id").references(() => shippingCompanies.id),
   shippingCompanyName: varchar("shipping_company_name", { length: 150 }),
+  courierId: text("courier_id").references(() => couriers.id),
   courierName: varchar("courier_name", { length: 150 }),
   status: orderStatusEnum("status").notNull().default("PREPARING"),
   prepaid: boolean("prepaid").notNull().default(false),
   createdById: text("created_by_id")
     .notNull()
     .references(() => users.id),
+  assignedById: text("assigned_by_id").references(() => users.id),
+  assignedAt: timestamp("assigned_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -456,8 +484,11 @@ export const returnRequests = pgTable("return_requests", {
   kind: returnKindEnum("kind").notNull(),
   invoiceId: text("invoice_id").references(() => salesInvoices.id),
   customerId: text("customer_id").references(() => customers.id),
+  supplierId: text("supplier_id").references(() => suppliers.id),
   totalAmount: money("total_amount").notNull(),
   status: returnStatusEnum("status").notNull().default("PENDING"),
+  reasonCategory: varchar("reason_category", { length: 100 }),
+  imageUrl: text("image_url"),
   reason: text("reason"),
   requestedById: text("requested_by_id").references(() => users.id),
   approvedById: text("approved_by_id").references(() => users.id),
@@ -530,6 +561,9 @@ export const auditLogs = pgTable(
 export const settings = pgTable("settings", {
   id: integer("id").primaryKey().default(1),
   companyName: varchar("company_name", { length: 150 }).notNull().default("جولد كوين"),
+  companyAddress: text("company_address"),
+  companyPhone: varchar("company_phone", { length: 50 }),
+  companyPhone2: varchar("company_phone2", { length: 50 }),
   currency: varchar("currency", { length: 10 }).notNull().default("EGP"),
   defaultVatRate: numeric("default_vat_rate", { precision: 5, scale: 2 }).notNull().default("14"),
   largeInvoiceAlert: money("large_invoice_alert").notNull().default("10000"),
