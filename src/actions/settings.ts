@@ -103,7 +103,7 @@ export async function getSettings() {
   return s;
 }
 
-export async function updateSettings(data: Partial<{ companyName: string; defaultVatRate: number; largeInvoiceAlert: number; adminWhatsapp: string; backupFrequency: string }>) {
+export async function updateSettings(data: Partial<{ companyName: string; companyAddress: string; companyPhone: string; companyPhone2: string; defaultVatRate: number; largeInvoiceAlert: number; adminWhatsapp: string; backupFrequency: string }>) {
   await requirePermission("settings.manage");
   const existing = await getSettings();
   const payload: any = { ...data, updatedAt: new Date() };
