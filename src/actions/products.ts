@@ -48,6 +48,7 @@ export async function createProduct(data: {
   reorderPoint: number;
   barcode?: string;
   sku?: string;
+  imageUrl?: string;
 }) {
   await requirePermission("products.manage");
   const [p] = await db
@@ -63,6 +64,7 @@ export async function createProduct(data: {
       reorderPoint: data.reorderPoint,
       sku: data.sku || genSku(),
       barcode: data.barcode || genBarcode(),
+      imageUrl: data.imageUrl,
     })
     .returning();
   await logAudit({ action: "CREATE", entityType: "Product", entityId: p.id, after: p });
@@ -72,7 +74,7 @@ export async function createProduct(data: {
 
 export async function updateProduct(id: string, data: Partial<{
   name: string; categoryId: string; requiresSerial: boolean; warrantyMonths: number;
-  unit: string; wholesalePrice: number; retailPrice: number; reorderPoint: number; active: boolean;
+  unit: string; wholesalePrice: number; retailPrice: number; reorderPoint: number; active: boolean; imageUrl: string;
 }>) {
   await requirePermission("products.manage");
   const before = await db.select().from(schema.products).where(eq(schema.products.id, id)).then(r => r[0]);
