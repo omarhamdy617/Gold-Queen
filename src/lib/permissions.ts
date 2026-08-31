@@ -33,7 +33,9 @@ export const PERMISSION_GROUPS: { group: string; perms: { key: string; label: st
     perms: [
       { key: "purchases.create", label: "تسجيل مشتريات" },
       { key: "purchases.view", label: "عرض المشتريات" },
+      { key: "purchases.edit", label: "تعديل/حذف فواتير مشتريات" },
       { key: "transfers.create", label: "تحويل بضاعة بين المحل والمخزن" },
+      { key: "transfers.edit", label: "تعديل تحويلات سابقة" },
     ],
   },
   {
