@@ -3,22 +3,27 @@ import { money, dateAr } from "@/lib/format";
 import { notFound } from "next/navigation";
 import PrintButton from "@/components/PrintButton";
 import PrintHeader from "@/components/PrintHeader";
+import DeleteInvoiceButton from "./DeleteInvoiceButton";
 
 export default async function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const data = await getInvoice(id);
   if (!data) return notFound();
-  const { invoice, items, customer } = data;
+  const { invoice, items, customer, createdByName, canEdit } = data;
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
-      <div className="no-print flex justify-end"><PrintButton /></div>
+      <div className="no-print flex justify-between items-center">
+        {canEdit ? <DeleteInvoiceButton id={id} /> : <span />}
+        <PrintButton />
+      </div>
       <div className="bg-white rounded-xl shadow p-8 print:shadow-none">
         <PrintHeader subtitle="فاتورة بيع" code={invoice.code} date={dateAr(invoice.createdAt)} />
 
         <div className="mb-4 text-sm">
           <p><span className="text-neutral-500">العميل: </span>{customer?.name || "عميل نقدي"}</p>
           {customer?.phone && <p><span className="text-neutral-500">الهاتف: </span>{customer.phone}</p>}
+          {createdByName && <p className="no-print"><span className="text-neutral-500">سجلها: </span>{createdByName}</p>}
         </div>
 
         <table className="w-full text-sm mb-4">
