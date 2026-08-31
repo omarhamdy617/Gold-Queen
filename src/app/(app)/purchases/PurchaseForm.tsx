@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { createPurchase, createSupplier } from "@/actions/purchases";
 import { useRouter } from "next/navigation";
+import ProductSearchSelect from "@/components/ProductSearchSelect";
 
 type Line = { productId: string; quantity: string; unitCost: string; serials: string };
 
@@ -16,6 +17,7 @@ export default function PurchaseForm({ suppliers, products, locations, paymentMe
   const [paymentMethodId, setPaymentMethodId] = useState(paymentMethods[0]?.id || "");
   const [lines, setLines] = useState<Line[]>([{ productId: "", quantity: "", unitCost: "", serials: "" }]);
   const [newSupplierName, setNewSupplierName] = useState("");
+  const [error, setError] = useState("");
 
   const total = lines.reduce((s, l) => s + (parseFloat(l.quantity) || 0) * (parseFloat(l.unitCost) || 0), 0);
 
@@ -26,12 +28,52 @@ export default function PurchaseForm({ suppliers, products, locations, paymentMe
       </button>
     );
 
+  function submit() {
+    setError("");
+    if (!supplierId) return setError("لازم تختار المورد");
+    if (!locationId) return setError("لازم تختار المكان (المحل أو المخزن)");
+    const items = lines
+      .filter((l) => l.productId || l.quantity || l.unitCost)
+      .map((l) => ({
+        productId: l.productId,
+        quantity: parseInt(l.quantity) || 0,
+        unitCost: parseFloat(l.unitCost) || 0,
+        serials: l.serials ? l.serials.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
+      }));
+    if (items.length === 0) return setError("لازم تضيف صنف واحد على الأقل");
+    for (const it of items) {
+      if (!it.productId) return setError("فيه سطر منتج لسه ماتحددش - اختار المنتج أو امسح السطر");
+      if (!it.quantity || it.quantity <= 0) return setError("لازم تدخل كمية صحيحة لكل صنف");
+      if (!it.unitCost || it.unitCost <= 0) return setError("لازم تدخل سعر شراء صحيح لكل صنف");
+    }
+    const paid = paymentStatus === "PAID" ? total : paymentStatus === "PARTIAL" ? parseFloat(paidAmount) || 0 : 0;
+    if (paid > 0 && !paymentMethodId) return setError("لازم تحدد طريقة الدفع للمبلغ المدفوع");
+
+    start(async () => {
+      try {
+        await createPurchase({
+          supplierId,
+          locationId,
+          items,
+          paymentStatus,
+          paidAmount: paid,
+          paymentMethodId: paid > 0 ? paymentMethodId : undefined,
+        });
+        setOpen(false);
+        setLines([{ productId: "", quantity: "", unitCost: "", serials: "" }]);
+        router.refresh();
+      } catch (e: any) {
+        setError(e?.message || "حصل خطأ أثناء حفظ فاتورة الشراء");
+      }
+    });
+  }
+
   return (
-    <div className="bg-white rounded-xl shadow p-4 space-y-4">
+    <div className="app-card p-4 space-y-4">
       <div className="grid sm:grid-cols-3 gap-3">
         <div className="flex gap-1">
           <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="border rounded px-3 py-2 text-sm flex-1">
-            <option value="">اختر المورد</option>
+            <option value="">اختر المورد *</option>
             {suppliers.map((s: any) => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
@@ -50,12 +92,13 @@ export default function PurchaseForm({ suppliers, products, locations, paymentMe
                 router.refresh();
               })
             }
-            className="bg-neutral-800 text-white rounded px-3 text-sm"
+            className="bg-navy text-white rounded px-3 text-sm"
           >
             إضافة
           </button>
         </div>
         <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className="border rounded px-3 py-2 text-sm">
+          <option value="">اختر المكان *</option>
           {locations.map((l: any) => (
             <option key={l.id} value={l.id}>{l.name}</option>
           ))}
@@ -66,21 +109,14 @@ export default function PurchaseForm({ suppliers, products, locations, paymentMe
         {lines.map((line, idx) => {
           const product = products.find((p: any) => p.id === line.productId);
           return (
-            <div key={idx} className="grid sm:grid-cols-5 gap-2 items-center">
-              <select
-                value={line.productId}
-                onChange={(e) => {
-                  const next = [...lines];
-                  next[idx].productId = e.target.value;
-                  setLines(next);
-                }}
-                className="border rounded px-2 py-1.5 text-sm sm:col-span-2"
-              >
-                <option value="">اختر منتج</option>
-                {products.map((p: any) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+            <div key={idx} className="grid sm:grid-cols-5 gap-2 items-start">
+              <div className="sm:col-span-2">
+                <ProductSearchSelect
+                  products={products}
+                  value={line.productId}
+                  onChange={(id) => { const next = [...lines]; next[idx].productId = id; setLines(next); }}
+                />
+              </div>
               <input type="number" placeholder="الكمية" value={line.quantity} onChange={(e) => {
                 const next = [...lines]; next[idx].quantity = e.target.value; setLines(next);
               }} className="border rounded px-2 py-1.5 text-sm" />
@@ -92,7 +128,7 @@ export default function PurchaseForm({ suppliers, products, locations, paymentMe
                   const next = [...lines]; next[idx].serials = e.target.value; setLines(next);
                 }} className="border rounded px-2 py-1.5 text-sm" />
               ) : (
-                <button type="button" onClick={() => setLines(lines.filter((_, i) => i !== idx))} className="text-red-500 text-xs">حذف السطر</button>
+                <button type="button" onClick={() => setLines(lines.filter((_, i) => i !== idx))} className="text-red-500 text-xs self-center">حذف السطر</button>
               )}
             </div>
           );
@@ -119,37 +155,13 @@ export default function PurchaseForm({ suppliers, products, locations, paymentMe
         )}
       </div>
 
+      {error && <div className="text-red-600 text-sm bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>}
+
       <div className="flex gap-2">
-        <button
-          disabled={pending || !supplierId || !locationId}
-          onClick={() =>
-            start(async () => {
-              const paid = paymentStatus === "PAID" ? total : paymentStatus === "PARTIAL" ? parseFloat(paidAmount) || 0 : 0;
-              await createPurchase({
-                supplierId,
-                locationId,
-                items: lines
-                  .filter((l) => l.productId && l.quantity)
-                  .map((l) => ({
-                    productId: l.productId,
-                    quantity: parseInt(l.quantity),
-                    unitCost: parseFloat(l.unitCost) || 0,
-                    serials: l.serials ? l.serials.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
-                  })),
-                paymentStatus,
-                paidAmount: paid,
-                paymentMethodId: paid > 0 ? paymentMethodId : undefined,
-              });
-              setOpen(false);
-              setLines([{ productId: "", quantity: "", unitCost: "", serials: "" }]);
-              router.refresh();
-            })
-          }
-          className="bg-gold text-white rounded-lg px-5 py-2 text-sm"
-        >
+        <button disabled={pending} onClick={submit} className="bg-primary text-white rounded-lg px-5 py-2 text-sm">
           حفظ الشراء
         </button>
-        <button type="button" onClick={() => setOpen(false)} className="text-neutral-500 text-sm">إلغاء</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-muted text-sm">إلغاء</button>
       </div>
     </div>
   );
