@@ -42,6 +42,25 @@ export async function updateUserPassword(userId: string, password: string) {
   await logAudit({ action: "UPDATE", entityType: "User", entityId: userId, after: { passwordChanged: true } });
 }
 
+export async function updateUser(userId: string, data: { username?: string; fullName?: string; roleId?: string }) {
+  await requirePermission("users.manage");
+  if (data.username !== undefined && !data.username.trim()) throw new Error("اسم المستخدم لازم يكون موجود");
+  if (data.fullName !== undefined && !data.fullName.trim()) throw new Error("الاسم بالكامل لازم يكون موجود");
+  const payload: any = { updatedAt: new Date() };
+  if (data.username !== undefined) payload.username = data.username.trim();
+  if (data.fullName !== undefined) payload.fullName = data.fullName.trim();
+  if (data.roleId !== undefined) payload.roleId = data.roleId;
+  try {
+    const [u] = await db.update(schema.users).set(payload).where(eq(schema.users.id, userId)).returning();
+    await logAudit({ action: "UPDATE", entityType: "User", entityId: userId, after: payload });
+    revalidatePath("/settings/users");
+    return u;
+  } catch (e: any) {
+    if (String(e?.message || "").includes("unique")) throw new Error("اسم المستخدم ده مستخدم بالفعل");
+    throw e;
+  }
+}
+
 export async function toggleUserActive(userId: string, active: boolean) {
   await requirePermission("users.manage");
   await db.update(schema.users).set({ active }).where(eq(schema.users.id, userId));
@@ -94,6 +113,15 @@ export async function setUserPermissionOverride(userId: string, key: string, all
 export async function createCustomRole(name: string) {
   await requirePermission("users.manage");
   const [role] = await db.insert(schema.roles).values({ name, builtIn: false }).returning();
+  revalidatePath("/settings/users");
+  return role;
+}
+
+export async function renameRole(roleId: string, name: string) {
+  await requirePermission("users.manage");
+  if (!name.trim()) throw new Error("لازم تكتب اسم للمسمى الوظيفي");
+  const [role] = await db.update(schema.roles).set({ name: name.trim() }).where(eq(schema.roles.id, roleId)).returning();
+  await logAudit({ action: "UPDATE", entityType: "Role", entityId: roleId, after: { name } });
   revalidatePath("/settings/users");
   return role;
 }
