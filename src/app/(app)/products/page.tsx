@@ -2,6 +2,7 @@ import { listProductsWithStock, listCategories, getReorderAlerts } from "@/actio
 import { listLocations } from "@/actions/products";
 import { money, num } from "@/lib/format";
 import ProductForm from "./ProductForm";
+import EditProductButton from "./EditProductButton";
 import Link from "next/link";
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
@@ -17,9 +18,14 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-bold">المنتجات والمخزون</h1>
-        <Link href="/products/barcode" className="text-sm text-gold hover:underline">
-          طباعة ملصقات باركود ←
-        </Link>
+        <div className="flex gap-4">
+          <Link href="/products/by-location" className="text-sm text-primary hover:underline">
+            المخزون حسب المكان ←
+          </Link>
+          <Link href="/products/barcode" className="text-sm text-gold hover:underline">
+            طباعة ملصقات باركود ←
+          </Link>
+        </div>
       </div>
 
       {(alerts.manual.length > 0 || alerts.smart.length > 0) && (
@@ -70,6 +76,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
               ))}
               <th>الإجمالي</th>
               <th>حد الطلب</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -94,6 +101,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                 ))}
                 <td className="font-bold">{num(p.totalStock)}</td>
                 <td>{num(p.reorderPoint)}</td>
+                <td><EditProductButton product={p} categories={categories} /></td>
               </tr>
             ))}
           </tbody>
