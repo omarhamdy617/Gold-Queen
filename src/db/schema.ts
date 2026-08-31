@@ -49,6 +49,7 @@ export const shippingMethodEnum = pgEnum("shipping_method", ["INTERNAL_COURIER",
 export const orderStatusEnum = pgEnum("order_status", ["PREPARING", "SHIPPED", "DELIVERED", "RETURNED"]);
 export const returnStatusEnum = pgEnum("return_status", ["PENDING", "APPROVED", "REJECTED"]);
 export const returnKindEnum = pgEnum("return_kind", ["SALE_RETURN", "PURCHASE_RETURN"]);
+export const collectionStatusEnum = pgEnum("collection_status", ["PENDING", "COLLECTED"]);
 
 // --------------------------------------------------------------------------
 // USERS / ROLES / PERMISSIONS
@@ -244,6 +245,23 @@ export const purchases = pgTable("purchases", {
   paidAmount: money("paid_amount").notNull().default("0"),
   paymentStatus: purchasePaymentStatusEnum("payment_status").notNull().default("UNPAID"),
   paymentMethodId: text("payment_method_id").references(() => paymentMethods.id),
+  createdById: text("created_by_id")
+    .notNull()
+    .references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const supplierPayments = pgTable("supplier_payments", {
+  id: cuid(),
+  supplierId: text("supplier_id")
+    .notNull()
+    .references(() => suppliers.id),
+  amount: money("amount").notNull(),
+  paymentMethodId: text("payment_method_id")
+    .notNull()
+    .references(() => paymentMethods.id),
+  transferMethod: varchar("transfer_method", { length: 100 }),
+  note: text("note"),
   createdById: text("created_by_id")
     .notNull()
     .references(() => users.id),
@@ -455,6 +473,12 @@ export const orders = pgTable("orders", {
   courierName: varchar("courier_name", { length: 150 }),
   status: orderStatusEnum("status").notNull().default("PREPARING"),
   prepaid: boolean("prepaid").notNull().default(false),
+  locationId: text("location_id").references(() => locations.id),
+  collectionStatus: collectionStatusEnum("collection_status"),
+  collectedAmount: money("collected_amount"),
+  returnReason: text("return_reason"),
+  deliveredById: text("delivered_by_id").references(() => users.id),
+  deliveredAt: timestamp("delivered_at"),
   createdById: text("created_by_id")
     .notNull()
     .references(() => users.id),
