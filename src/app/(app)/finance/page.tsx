@@ -1,5 +1,6 @@
 import { getFinancialPosition } from "@/actions/finance";
 import { money, num } from "@/lib/format";
+import Link from "next/link";
 
 export default async function FinancePage() {
   const f = await getFinancialPosition();
@@ -17,14 +18,17 @@ export default async function FinancePage() {
         <Card label="صافي الوضع المالي التقديري" value={money(f.netPosition)} color="bg-gold" wide />
       </div>
 
-      <div className="bg-white rounded-xl shadow p-4">
+      <div className="app-card p-4">
         <h2 className="font-bold mb-3">تفصيل قيمة المخزون حسب المكان</h2>
         <table className="w-full text-sm text-right">
-          <thead><tr className="border-b text-neutral-500"><th className="py-2">المكان</th><th>الكمية</th><th>القيمة بالتكلفة</th></tr></thead>
+          <thead><tr className="border-b text-muted"><th className="py-2">المكان</th><th>الكمية</th><th>القيمة بالتكلفة</th></tr></thead>
           <tbody>
             {f.byLocation.map((l) => (
-              <tr key={l.name} className="border-b last:border-0">
-                <td className="py-2">{l.name}</td><td>{num(l.qty)}</td><td>{money(l.value)}</td>
+              <tr key={l.id} className="border-b last:border-0 hover:bg-neutral-50">
+                <td className="py-2">
+                  <Link href={`/products/by-location?locationId=${l.id}`} className="text-primary underline">{l.name}</Link>
+                </td>
+                <td>{num(l.qty)}</td><td>{money(l.value)}</td>
               </tr>
             ))}
           </tbody>
