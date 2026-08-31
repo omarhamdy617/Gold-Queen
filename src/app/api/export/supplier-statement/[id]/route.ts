@@ -2,36 +2,42 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupplier, getSupplierLedger } from "@/actions/purchases";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const url = new URL(req.url);
   const format = url.searchParams.get("format") || "excel";
+
   const supplier = await getSupplier(id);
   if (!supplier) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   const { purchases, payments } = await getSupplierLedger(id);
+
   const timeline = [
     ...purchases.map((p) => ({ date: p.createdAt, type: "فاتورة مشترى", ref: p.code, debit: Number(p.totalAmount), credit: 0 })),
     ...payments.map((p) => ({ date: p.createdAt, type: "سداد", ref: p.transferMethod || "-", debit: 0, credit: Number(p.amount) })),
   ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
   if (format === "pdf") {
     const doc = new PDFDocument({ margin: 40 });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+
     doc.fontSize(18).text("Gold Queen - Supplier Statement / كشف حساب مورد", { align: "center" });
     doc.moveDown();
-    doc.fontSize(12).text(Supplier: ${supplier.name}  |  Balance: ${supplier.balance});
+    doc.fontSize(12).text(`Supplier: ${supplier.name}  |  Balance: ${supplier.balance}`);
     doc.moveDown();
     doc.fontSize(10);
     for (const t of timeline) {
-      doc.text(${new Date(t.date).toLocaleDateString()}  ${t.type}  ${t.ref}  Debit:${t.debit || 0}  Credit:${t.credit || 0});
+      doc.text(`${new Date(t.date).toLocaleDateString()}  ${t.type}  ${t.ref}  Debit:${t.debit || 0}  Credit:${t.credit || 0}`);
     }
     doc.end();
     const buffer = await done;
     return new NextResponse(new Uint8Array(buffer), {
-      headers: { "Content-Type": "application/pdf", "Content-Disposition": attachment; filename="supplier-statement-${id}.pdf" },
+      headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="supplier-statement-${id}.pdf"` },
     });
   }
+
   const wb = new ExcelJS.Workbook();
   const sheet = wb.addWorksheet("كشف حساب مورد");
   sheet.views = [{ rightToLeft: true }];
@@ -49,7 +55,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return new NextResponse(new Uint8Array(buf as ArrayBuffer), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": attachment; filename="supplier-statement-${id}.xlsx",
+      "Content-Disposition": `attachment; filename="supplier-statement-${id}.xlsx"`,
     },
   });
 }
