@@ -11,7 +11,7 @@ import AppShell from "@/components/AppShell";
 const SECTIONS: { title: string; hrefs: string[] }[] = [
   { title: "عام", hrefs: ["/"] },
   { title: "المبيعات", hrefs: ["/sales/new", "/sales", "/quotes"] },
-  { title: "المخزون", hrefs: ["/products", "/products/barcode", "/purchases", "/transfers"] },
+  { title: "المخزون", hrefs: ["/products", "/products/barcode", "/purchases", "/suppliers", "/transfers"] },
   { title: "العملاء والأوردرات", hrefs: ["/customers", "/consignments", "/orders", "/returns"] },
   { title: "الحسابات", hrefs: ["/cash", "/expenses", "/finance", "/reports"] },
   { title: "الإدارة", hrefs: ["/audit", "/settings/users", "/settings"] },
