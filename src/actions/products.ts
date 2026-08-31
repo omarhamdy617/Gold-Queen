@@ -113,6 +113,30 @@ export async function listProductsWithStock(search?: string) {
   });
 }
 
+export async function getInventoryByLocation(locationId: string) {
+  await requirePermission("products.view");
+  const stocks = await db
+    .select({
+      productId: schema.stocks.productId,
+      quantity: schema.stocks.quantity,
+      productName: schema.products.name,
+      avgCost: schema.products.avgCost,
+      barcode: schema.products.barcode,
+    })
+    .from(schema.stocks)
+    .innerJoin(schema.products, eq(schema.stocks.productId, schema.products.id))
+    .where(eq(schema.stocks.locationId, locationId));
+
+  const rows = stocks
+    .filter((s) => s.quantity > 0)
+    .map((s) => ({ ...s, costValue: s.quantity * Number(s.avgCost) }))
+    .sort((a, b) => a.productName.localeCompare(b.productName, "ar"));
+
+  const totalQuantity = rows.reduce((sum, r) => sum + r.quantity, 0);
+  const totalValue = rows.reduce((sum, r) => sum + r.costValue, 0);
+  return { rows, totalQuantity, totalValue };
+}
+
 export async function getReorderAlerts() {
   await requirePermission("inventory.view");
   const prods = await listProductsWithStock();
