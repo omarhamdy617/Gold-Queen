@@ -1,6 +1,7 @@
 import { listCashDrawers, listCashTransactions } from "@/actions/cash";
 import { money, dateAr } from "@/lib/format";
 import CashAdjustForm from "./AdjustForm";
+import TransactionDetail from "./TransactionDetail";
 
 export default async function CashPage() {
   const drawers = await listCashDrawers();
@@ -18,24 +19,25 @@ export default async function CashPage() {
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {drawers.map((d) => (
-          <div key={d.id} className="bg-white rounded-xl shadow p-4 space-y-2">
-            <div className="text-sm text-neutral-500">{d.paymentMethodName}</div>
+          <div key={d.id} className="app-card p-4 space-y-2">
+            <div className="text-sm text-muted">{d.paymentMethodName}</div>
             <div className="text-2xl font-bold">{money(d.balance)}</div>
             <CashAdjustForm paymentMethodId={d.paymentMethodId!} />
           </div>
         ))}
       </div>
 
-      <div className="bg-white rounded-xl shadow p-4">
+      <div className="app-card p-4">
         <h2 className="font-bold mb-3">آخر الحركات</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-right">
             <thead>
-              <tr className="border-b text-neutral-500">
+              <tr className="border-b text-muted">
                 <th className="py-2">التاريخ</th>
                 <th>النوع</th>
                 <th>المبلغ</th>
                 <th>الرصيد بعدها</th>
+                <th>اللي عملها</th>
                 <th>ملاحظة</th>
               </tr>
             </thead>
@@ -43,10 +45,11 @@ export default async function CashPage() {
               {txs.map((t) => (
                 <tr key={t.id} className="border-b last:border-0">
                   <td className="py-2">{dateAr(t.createdAt)}</td>
-                  <td>{typeLabel(t.type)}</td>
+                  <td><TransactionDetail id={t.id} label={typeLabel(t.type)} /></td>
                   <td>{money(t.amount)}</td>
                   <td>{money(t.balanceAfter)}</td>
-                  <td className="text-neutral-500">{t.note}</td>
+                  <td className="text-xs">{t.createdByName}</td>
+                  <td className="text-muted">{t.note}</td>
                 </tr>
               ))}
             </tbody>
