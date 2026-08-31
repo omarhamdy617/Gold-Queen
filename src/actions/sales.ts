@@ -153,7 +153,49 @@ export async function getInvoice(id: string) {
     .where(eq(schema.salesInvoiceItems.invoiceId, id));
   let customer = null;
   if (invoice.customerId) [customer] = await db.select().from(schema.customers).where(eq(schema.customers.id, invoice.customerId));
-  return { invoice, items, customer };
+  let createdByName: string | null = null;
+  if (invoice.createdById) {
+    const [u] = await db.select({ fullName: schema.users.fullName }).from(schema.users).where(eq(schema.users.id, invoice.createdById));
+    createdByName = u?.fullName || null;
+  }
+  const canEdit = await can("sales.edit_old");
+  return { invoice, items, customer, createdByName, canEdit };
+}
+
+// -------------------- حذف فاتورة بيع (بيعكس المخزون ورصيد العميل والخزينة) --------------------
+export async function deleteSalesInvoice(id: string) {
+  await requirePermission("sales.edit_old");
+  const session = await requireSession();
+  const [invoice] = await db.select().from(schema.salesInvoices).where(eq(schema.salesInvoices.id, id));
+  if (!invoice) throw new Error("الفاتورة غير موجودة");
+  const items = await db.select().from(schema.salesInvoiceItems).where(eq(schema.salesInvoiceItems.invoiceId, id));
+
+  await db.transaction(async (tx) => {
+    for (const item of items) {
+      await adjustStock(tx, item.productId, invoice.locationId, item.quantity);
+    }
+    if (invoice.customerId) {
+      const unpaid = Number(invoice.total) - Number(invoice.paidAmount);
+      if (unpaid !== 0) await updateCustomerBalance(tx, invoice.customerId, -unpaid);
+    }
+    if (Number(invoice.paidAmount) > 0 && invoice.paymentMethodId) {
+      await postCashByPaymentMethod(tx, invoice.paymentMethodId, "RETURN_OUT", Number(invoice.paidAmount), {
+        note: `حذف فاتورة بيع ${invoice.code}`,
+        refType: "SalesInvoice",
+        refId: invoice.id,
+        createdById: session.userId,
+        direction: "out",
+      });
+    }
+    await tx.delete(schema.salesInvoiceItems).where(eq(schema.salesInvoiceItems.invoiceId, id));
+    await tx.delete(schema.salesInvoices).where(eq(schema.salesInvoices.id, id));
+  });
+
+  await logAudit({ action: "DELETE", entityType: "SalesInvoice", entityId: id, before: invoice });
+  revalidatePath("/sales");
+  revalidatePath("/products");
+  revalidatePath("/cash");
+  revalidatePath("/customers");
 }
 
 // -------------------- QUOTES --------------------
