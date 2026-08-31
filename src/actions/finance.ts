@@ -20,19 +20,19 @@ export async function getFinancialPosition() {
 
   // قيمة المخزون بالتكلفة (محل + مخزن)
   const stockRows = await db
-    .select({ productId: schema.stocks.productId, quantity: schema.stocks.quantity, avgCost: schema.products.avgCost, locationType: schema.locations.type, locationName: schema.locations.name })
+    .select({ productId: schema.stocks.productId, quantity: schema.stocks.quantity, avgCost: schema.products.avgCost, locationType: schema.locations.type, locationName: schema.locations.name, locationId: schema.stocks.locationId })
     .from(schema.stocks)
     .innerJoin(schema.products, eq(schema.stocks.productId, schema.products.id))
     .innerJoin(schema.locations, eq(schema.stocks.locationId, schema.locations.id));
 
   let inventoryValue = 0;
-  const byLocation: Record<string, { name: string; qty: number; value: number }> = {};
+  const byLocation: Record<string, { id: string; name: string; qty: number; value: number }> = {};
   for (const r of stockRows) {
     const value = r.quantity * Number(r.avgCost);
     inventoryValue += value;
-    if (!byLocation[r.locationName]) byLocation[r.locationName] = { name: r.locationName, qty: 0, value: 0 };
-    byLocation[r.locationName].qty += r.quantity;
-    byLocation[r.locationName].value += value;
+    if (!byLocation[r.locationId]) byLocation[r.locationId] = { id: r.locationId, name: r.locationName, qty: 0, value: 0 };
+    byLocation[r.locationId].qty += r.quantity;
+    byLocation[r.locationId].value += value;
   }
 
   // البضاعة في الطريق (أوردرات مشحونة ولسه معلقة)
