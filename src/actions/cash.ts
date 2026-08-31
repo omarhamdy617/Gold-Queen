@@ -50,7 +50,26 @@ export async function listCashTransactions(drawerId?: string) {
     orderBy: (t, { desc }) => [desc(t.createdAt)],
     limit: 200,
   });
-  return rows;
+  const userIds = Array.from(new Set(rows.map((r) => r.createdById).filter(Boolean))) as string[];
+  const users = userIds.length ? await db.select().from(schema.users) : [];
+  const nameMap: Record<string, string> = {};
+  for (const u of users) if (userIds.includes(u.id)) nameMap[u.id] = u.fullName;
+  return rows.map((r) => ({ ...r, createdByName: r.createdById ? nameMap[r.createdById] || "-" : "-" }));
+}
+
+export async function getCashTransaction(id: string) {
+  await requirePermission("cash.view");
+  const [tx] = await db.select().from(schema.cashTransactions).where(eq(schema.cashTransactions.id, id));
+  if (!tx) return null;
+  let createdByName: string | undefined;
+  let drawerName: string | undefined;
+  if (tx.createdById) {
+    const [u] = await db.select().from(schema.users).where(eq(schema.users.id, tx.createdById));
+    createdByName = u?.fullName;
+  }
+  const [d] = await db.select().from(schema.cashDrawers).where(eq(schema.cashDrawers.id, tx.drawerId));
+  drawerName = d?.name;
+  return { ...tx, createdByName, drawerName };
 }
 
 export async function listPaymentMethods() {
