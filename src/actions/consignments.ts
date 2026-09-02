@@ -46,7 +46,11 @@ export async function giveConsignment(input: {
         unitPrice: item.unitPrice.toFixed(2),
       });
       const newQty = await adjustStock(tx, item.productId, input.locationId, -item.quantity);
-      if (newQty < 0) throw new Error("الكمية غير متوفرة");
+      if (newQty < 0) {
+        const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, item.productId));
+        const available = newQty + item.quantity;
+        throw new Error(`المنتج "${product?.name || ""}" غير متاح بالكمية دي في المكان ده - المتاح فعليًا ${available} بس`);
+      }
     }
     await updateConsignmentBalance(tx, consignment.id, totalValue);
     return consignment;
