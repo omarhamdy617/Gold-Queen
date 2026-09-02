@@ -43,6 +43,6 @@ export default async function ReturnsPage() {
   );
 }
 function statusBadge(s: string) {
-  const map: Record<string, string> = { PENDING: "🟡 قيد الموافقة", APPROVED: "🟢 معتمد", REJECTED: "🔴 مرفوض" };
+  const map: Record<string, string> = { PENDING: "🟡 قيد الموافقة", APPROVED: "🟢 تم الاعتماد والدفع", REJECTED: "🔴 مرفوض" };
   return map[s] || s;
 }
