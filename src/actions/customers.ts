@@ -5,19 +5,27 @@ import { requirePermission, requireSession, logAudit } from "@/lib/auth";
 import { postCashByPaymentMethod, updateCustomerBalance } from "@/lib/ops";
 import { revalidatePath } from "next/cache";
 
-export async function listCustomers(search?: string) {
+export async function listCustomers(search?: string, filters?: { type?: "RETAIL" | "TRADER"; owesOnly?: boolean }) {
   await requirePermission("customers.manage");
-  return db
+  const rows = await db
     .select()
     .from(schema.customers)
     .where(
       search ? or(ilike(schema.customers.name, `%${search}%`), ilike(schema.customers.phone, `%${search}%`)) : undefined
     )
     .orderBy(schema.customers.name);
+  let result = rows;
+  if (filters?.type) result = result.filter((c) => c.type === filters.type);
+  if (filters?.owesOnly) result = result.filter((c) => Number(c.balance) > 0);
+  return result;
 }
 
 export async function createCustomer(data: { name: string; phone?: string; type: "RETAIL" | "TRADER"; creditLimit?: number; notes?: string }) {
   await requirePermission("customers.manage");
+  if (data.phone) {
+    const [existing] = await db.select().from(schema.customers).where(eq(schema.customers.phone, data.phone));
+    if (existing) throw new Error(`الرقم ده مسجل بالفعل لعميل اسمه "${existing.name}" - اختاره من قائمة البحث بدل ما تعمل عميل جديد`);
+  }
   const [c] = await db
     .insert(schema.customers)
     .values({ ...data, creditLimit: (data.creditLimit || 0).toFixed(2) })
@@ -39,7 +47,13 @@ export async function updateCustomer(id: string, data: Partial<{ name: string; p
 export async function getCustomer(id: string) {
   await requirePermission("customers.manage");
   const [c] = await db.select().from(schema.customers).where(eq(schema.customers.id, id));
-  return c;
+  if (!c) return c;
+  const orders = await db
+    .select({ id: schema.orders.id, code: schema.orders.code, status: schema.orders.status, createdAt: schema.orders.createdAt })
+    .from(schema.orders)
+    .where(eq(schema.orders.customerId, id))
+    .orderBy(desc(schema.orders.createdAt));
+  return { ...c, orders };
 }
 
 export async function recordCollection(data: { customerId: string; amount: number; paymentMethodId: string; note?: string }) {
