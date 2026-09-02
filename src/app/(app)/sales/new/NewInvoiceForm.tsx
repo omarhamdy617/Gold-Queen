@@ -1,15 +1,16 @@
 "use client";
 import { useMemo, useState, useTransition } from "react";
 import { createSalesInvoice } from "@/actions/sales";
-import { createCustomer } from "@/actions/customers";
 import { useRouter } from "next/navigation";
+import CustomerPicker, { type PickerCustomer } from "@/components/CustomerPicker";
 
 type Line = { productId: string; quantity: string; unitPrice: string; serials: string };
 
-export default function NewInvoiceForm({ products, locations, customers, paymentMethods }: any) {
+export default function NewInvoiceForm({ products, locations, customers: initialCustomers, paymentMethods }: any) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [locationId, setLocationId] = useState(locations[0]?.id || "");
+  const [customers, setCustomers] = useState<PickerCustomer[]>(initialCustomers);
   const [customerId, setCustomerId] = useState("");
   const [lines, setLines] = useState<Line[]>([{ productId: "", quantity: "1", unitPrice: "", serials: "" }]);
   const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
@@ -19,8 +20,6 @@ export default function NewInvoiceForm({ products, locations, customers, payment
   const [paymentMethodId, setPaymentMethodId] = useState(paymentMethods[0]?.id || "");
   const [source, setSource] = useState("OTHER");
   const [error, setError] = useState("");
-  const [newCustomerName, setNewCustomerName] = useState("");
-  const [newCustomerPhone, setNewCustomerPhone] = useState("");
 
   const customer = customers.find((c: any) => c.id === customerId);
   const priceKey = customer?.type === "TRADER" ? "wholesalePrice" : "retailPrice";
@@ -102,33 +101,13 @@ export default function NewInvoiceForm({ products, locations, customers, payment
           </div>
         </div>
         <div>
-          <label className="text-xs text-muted mb-1 block">العميل (اختياري)</label>
-          <div className="grid sm:grid-cols-3 gap-2">
-            <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="border rounded px-3 py-2 text-sm">
-              <option value="">عميل نقدي (بدون تسجيل)</option>
-              {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name} {c.type === "TRADER" ? "(تاجر)" : ""}</option>)}
-            </select>
-            <input placeholder="اسم عميل جديد" value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} className="border rounded px-2 py-2 text-sm" />
-            <div className="flex gap-1">
-              <input placeholder="رقم الهاتف (اختياري)" value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} className="border rounded px-2 py-2 text-sm flex-1" />
-              <button
-                type="button"
-                onClick={() =>
-                  start(async () => {
-                    if (!newCustomerName) return;
-                    const c = await createCustomer({ name: newCustomerName, phone: newCustomerPhone || undefined, type: "RETAIL" });
-                    setCustomerId(c.id);
-                    setNewCustomerName("");
-                    setNewCustomerPhone("");
-                    router.refresh();
-                  })
-                }
-                className="bg-navy text-white rounded px-3 text-sm"
-              >
-                إضافة
-              </button>
-            </div>
-          </div>
+          <CustomerPicker
+            customers={customers}
+            value={customerId}
+            onChange={(id) => setCustomerId(id)}
+            onCreated={(c) => setCustomers((prev) => [...prev, c])}
+            label="العميل (اختياري - اكتب اسم أو رقم هاتف عشان تدور)"
+          />
         </div>
       </div>
 
