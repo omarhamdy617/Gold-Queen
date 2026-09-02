@@ -3,18 +3,19 @@ import { listProductsWithStock, listLocations } from "@/actions/products";
 import { listCustomers } from "@/actions/customers";
 import { listSuppliers } from "@/actions/purchases";
 import { listPaymentMethods } from "@/actions/cash";
+import { getReturnReasons } from "@/actions/settings";
 import { money, dateAr } from "@/lib/format";
 import ReturnForm from "./ReturnForm";
 import ApproveControls from "./ApproveControls";
 
 export default async function ReturnsPage() {
-  const [returns, products, customers, suppliers, locations, paymentMethods] = await Promise.all([
-    listReturns(), listProductsWithStock(), listCustomers(), listSuppliers(), listLocations(), listPaymentMethods(),
+  const [returns, products, customers, suppliers, locations, paymentMethods, reasons] = await Promise.all([
+    listReturns(), listProductsWithStock(), listCustomers(), listSuppliers(), listLocations(), listPaymentMethods(), getReturnReasons(),
   ]);
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">المرتجعات (لازم اعتماد أدمن)</h1>
-      <ReturnForm products={products} customers={customers} suppliers={suppliers} />
+      <ReturnForm products={products} customers={customers} suppliers={suppliers} reasons={reasons} />
       <div className="app-card overflow-x-auto">
         <table className="w-full text-sm text-right min-w-[900px]">
           <thead>
