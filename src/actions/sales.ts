@@ -14,6 +14,7 @@ type InvoiceInput = {
   paidAmount: number;
   paymentMethodId?: string;
   source: "WEBSITE" | "PHONE" | "WHATSAPP" | "FACEBOOK" | "OTHER";
+  notes?: string;
 };
 
 export async function createSalesInvoice(input: InvoiceInput) {
@@ -61,6 +62,7 @@ export async function createSalesInvoice(input: InvoiceInput) {
         paymentStatus: input.paymentStatus,
         paymentMethodId: input.paymentMethodId,
         source: input.source,
+        notes: input.notes || undefined,
         createdById: session.userId,
       })
       .returning();
