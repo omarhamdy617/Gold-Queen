@@ -58,6 +58,12 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
           <div className="flex justify-between text-red-600"><span>المتبقي</span><span>{money(Number(invoice.total) - Number(invoice.paidAmount))}</span></div>
         </div>
 
+        {invoice.notes && (
+          <div className="mt-4 border-t pt-3 text-sm">
+            <span className="text-neutral-500">ملاحظات: </span>{invoice.notes}
+          </div>
+        )}
+
         <p className="text-center text-xs text-neutral-400 mt-8">شكرًا لتعاملكم مع جولد كوين</p>
       </div>
     </div>
