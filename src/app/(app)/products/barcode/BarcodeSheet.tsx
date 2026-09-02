@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 
-type P = { id: string; name: string; barcode: string; retailPrice: string };
+type P = { id: string; name: string; sku: string; barcode: string; retailPrice: string };
 
 export default function BarcodeSheet({ products }: { products: P[] }) {
   const [selected, setSelected] = useState<Record<string, number>>({});
@@ -56,7 +56,8 @@ export default function BarcodeSheet({ products }: { products: P[] }) {
           <div key={i} className="border rounded p-2 text-center break-inside-avoid">
             <div className="text-xs font-bold mb-1 truncate">{p.name}</div>
             <img src={`/api/barcode/${p.barcode}`} alt={p.barcode} className="mx-auto" />
-            <div className="text-xs font-bold mt-1">{Number(p.retailPrice).toFixed(2)} ج.م</div>
+            <div className="text-[10px] text-neutral-500 font-mono mt-0.5">#{p.sku}</div>
+            <div className="text-xs font-bold mt-0.5">{Number(p.retailPrice).toFixed(2)} ج.م</div>
           </div>
         ))}
       </div>
