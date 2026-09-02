@@ -2,8 +2,10 @@
 import { useState, useTransition } from "react";
 import { createQuote } from "@/actions/sales";
 import { useRouter } from "next/navigation";
+import CustomerPicker from "@/components/CustomerPicker";
 
-export default function QuoteForm({ products, customers, templates }: any) {
+export default function QuoteForm({ products, customers: initialCustomers, templates }: any) {
+  const [customers, setCustomers] = useState(initialCustomers);
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -35,16 +37,21 @@ export default function QuoteForm({ products, customers, templates }: any) {
   return (
     <div className="bg-white rounded-xl shadow p-4 space-y-3">
       <div className="grid sm:grid-cols-3 gap-3">
-        <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="border rounded px-3 py-2 text-sm">
-          <option value="">عميل غير مسجل</option>
-          {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        {!customerId && (
-          <>
-            <input placeholder="اسم العميل" value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="border rounded px-3 py-2 text-sm" />
-            <input placeholder="رقم الهاتف (لواتساب)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="border rounded px-3 py-2 text-sm" />
-          </>
-        )}
+        <CustomerPicker
+          customers={customers}
+          value={customerId}
+          onChange={(id, c) => {
+            setCustomerId(id);
+            if (c) {
+              setCustomerName(c.name);
+              setCustomerPhone(c.phone || "");
+            }
+          }}
+          onCreated={(c) => setCustomers((prev: any) => [...prev, c])}
+          label=""
+        />
+        <input placeholder="اسم العميل" value={customerName} onChange={(e) => setCustomerName(e.target.value)} disabled={!!customerId} className="border rounded px-3 py-2 text-sm disabled:bg-background" />
+        <input placeholder="رقم الهاتف (لواتساب)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} disabled={!!customerId} className="border rounded px-3 py-2 text-sm disabled:bg-background" />
       </div>
 
       {lines.map((line, idx) => (
