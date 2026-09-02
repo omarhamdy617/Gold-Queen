@@ -1,24 +1,35 @@
 import { getDashboardData } from "@/actions/dashboard";
 import { money, num } from "@/lib/format";
 import Link from "next/link";
+import AlertsBanner from "@/components/AlertsBanner";
 
 export default async function DashboardPage() {
   const d = await getDashboardData();
+  const today = new Date().toISOString().slice(0, 10);
+  const bannerAlerts = [
+    d.largeInvoices.length > 0
+      ? { key: `large-${today}-${d.largeInvoices.length}`, text: `فيه ${d.largeInvoices.length} فاتورة بمبلغ كبير اليوم`, href: "/sales" }
+      : null,
+    d.overLimitCustomers.length > 0
+      ? {
+          key: `overlimit-${d.overLimitCustomers.map((c) => c.id).join(",")}`,
+          text: `تجار تجاوزوا حد الائتمان: ${d.overLimitCustomers.map((c) => c.name).join("، ")}`,
+          href: "/customers",
+        }
+      : null,
+    d.pendingReturnsCount > 0
+      ? { key: `returns-${d.pendingReturnsCount}`, text: `${d.pendingReturnsCount} مرتجع قيد الموافقة`, href: "/returns" }
+      : null,
+    d.lowStockCount > 0
+      ? { key: `lowstock-${d.lowStockCount}`, text: `${d.lowStockCount} منتج وصل لحد إعادة الطلب`, href: "/products" }
+      : null,
+  ].filter(Boolean) as { key: string; text: string; href: string }[];
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">لوحة تحكم الأدمن</h1>
 
-      {(d.largeInvoices.length > 0 || d.overLimitCustomers.length > 0 || d.pendingReturnsCount > 0 || d.lowStockCount > 0) && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-1 text-sm">
-          <h2 className="font-bold text-red-700 mb-2">🔔 تنبيهات فورية</h2>
-          {d.largeInvoices.length > 0 && <p>فيه {d.largeInvoices.length} فاتورة بمبلغ كبير اليوم</p>}
-          {d.overLimitCustomers.length > 0 && (
-            <p>تجار تجاوزوا حد الائتمان: {d.overLimitCustomers.map((c) => c.name).join("، ")}</p>
-          )}
-          {d.pendingReturnsCount > 0 && <p><Link href="/returns" className="underline">{d.pendingReturnsCount} مرتجع قيد الموافقة</Link></p>}
-          {d.lowStockCount > 0 && <p><Link href="/products" className="underline">{d.lowStockCount} منتج وصل لحد إعادة الطلب</Link></p>}
-        </div>
-      )}
+      <AlertsBanner alerts={bannerAlerts} />
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card label="مبيعات اليوم" value={money(d.salesToday)} icon="🧾" accent="primary" />
