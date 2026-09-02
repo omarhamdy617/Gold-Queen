@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCustomer, customerStatement } from "@/actions/customers";
+import { buildCustomerTimeline } from "@/lib/statement";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 
@@ -14,10 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!customer) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   const { invoices, payments } = await customerStatement(id, from, to);
 
-  const timeline = [
-    ...invoices.map((i) => ({ date: i.createdAt, type: "فاتورة بيع", ref: i.code, debit: Number(i.total), credit: 0 })),
-    ...payments.map((p) => ({ date: p.createdAt, type: "تحصيل", ref: "-", debit: 0, credit: Number(p.amount) })),
-  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const { rows: timeline, opening } = buildCustomerTimeline(Number(customer.balance), invoices, payments);
 
   if (format === "pdf") {
     const doc = new PDFDocument({ margin: 40 });
@@ -30,8 +28,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     doc.fontSize(12).text(`Customer: ${customer.name}  |  Balance: ${customer.balance}`);
     doc.moveDown();
     doc.fontSize(10);
+    doc.text(`Opening balance: ${opening.toFixed(2)}`);
     for (const t of timeline) {
-      doc.text(`${new Date(t.date).toLocaleDateString()}  ${t.type}  ${t.ref}  Debit:${t.debit || 0}  Credit:${t.credit || 0}`);
+      doc.text(`${new Date(t.date).toLocaleDateString()}  ${t.type}  ${t.ref}  Debit:${t.debit || 0}  Credit:${t.credit || 0}  Balance:${t.balance!.toFixed(2)}`);
     }
     doc.end();
     const buffer = await done;
@@ -49,9 +48,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     { header: "مرجع", key: "ref", width: 15 },
     { header: "مدين", key: "debit", width: 15 },
     { header: "دائن", key: "credit", width: 15 },
+    { header: "الرصيد", key: "balance", width: 15 },
   ];
+  sheet.addRow({ date: "", type: "رصيد افتتاحي", ref: "", debit: "", credit: "", balance: opening.toFixed(2) });
   for (const t of timeline) {
-    sheet.addRow({ date: new Date(t.date).toLocaleString("en-GB"), type: t.type, ref: t.ref, debit: t.debit || "", credit: t.credit || "" });
+    sheet.addRow({ date: new Date(t.date).toLocaleString("en-GB"), type: t.type, ref: t.ref, debit: t.debit || "", credit: t.credit || "", balance: t.balance!.toFixed(2) });
   }
   const buf = await wb.xlsx.writeBuffer();
   return new NextResponse(new Uint8Array(buf as ArrayBuffer), {
