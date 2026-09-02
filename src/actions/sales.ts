@@ -80,7 +80,10 @@ export async function createSalesInvoice(input: InvoiceInput) {
         .returning();
 
       const newQty = await adjustStock(tx, item.productId, input.locationId, -item.quantity);
-      if (newQty < 0) throw new Error(`الكمية غير متوفرة للمنتج: ${product.name}`);
+      if (newQty < 0) {
+        const available = newQty + item.quantity;
+        throw new Error(`المنتج "${product.name}" غير متاح بالكمية دي في المكان ده - المتاح فعليًا ${available} بس وأنت طالب ${item.quantity}`);
+      }
 
       if (item.serials && item.serials.length) {
         for (const sn of item.serials) {
