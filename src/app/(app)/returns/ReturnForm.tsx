@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { createReturnRequest } from "@/actions/returns";
 import { RETURN_REASONS } from "@/lib/returnReasons";
 import { useRouter } from "next/navigation";
+import CustomerPicker from "@/components/CustomerPicker";
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -13,7 +14,8 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-export default function ReturnForm({ products, customers, suppliers }: any) {
+export default function ReturnForm({ products, customers: initialCustomers, suppliers }: any) {
+  const [customers, setCustomers] = useState(initialCustomers);
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -69,10 +71,13 @@ export default function ReturnForm({ products, customers, suppliers }: any) {
           <option value="PURCHASE_RETURN">مرتجع شراء (لمورد)</option>
         </select>
         {kind === "SALE_RETURN" ? (
-          <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="border rounded px-3 py-2 text-sm">
-            <option value="">اختر العميل *</option>
-            {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <CustomerPicker
+            customers={customers}
+            value={customerId}
+            onChange={(id) => setCustomerId(id)}
+            onCreated={(c) => setCustomers((prev: any) => [...prev, c])}
+            label=""
+          />
         ) : (
           <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="border rounded px-3 py-2 text-sm">
             <option value="">اختر المورد *</option>
