@@ -320,6 +320,7 @@ export const customers = pgTable("customers", {
   type: customerTypeEnum("type").notNull().default("RETAIL"),
   creditLimit: money("credit_limit").notNull().default("0"),
   balance: money("balance").notNull().default("0"),
+  address: text("address"),
   notes: text("notes"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -383,6 +384,7 @@ export const salesInvoices = pgTable("sales_invoices", {
   paymentStatus: invoicePaymentStatusEnum("payment_status").notNull().default("PAID"),
   paymentMethodId: text("payment_method_id").references(() => paymentMethods.id),
   source: orderSourceEnum("source").notNull().default("OTHER"),
+  notes: text("notes"),
   createdById: text("created_by_id")
     .notNull()
     .references(() => users.id),
