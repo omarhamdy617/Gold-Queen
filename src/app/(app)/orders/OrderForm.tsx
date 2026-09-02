@@ -21,7 +21,6 @@ export default function OrderForm({ products, customers: initialCustomers, locat
   const [orderNotes, setOrderNotes] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
   const [prepaid, setPrepaid] = useState(false);
-  const [locationId, setLocationId] = useState(locations?.[0]?.id || "");
   const [lines, setLines] = useState([{ productId: "", quantity: "" }]);
 
   if (!open) return <button onClick={() => setOpen(true)} className="bg-gold text-white rounded-lg px-4 py-2 text-sm">+ أوردر جديد</button>;
@@ -32,7 +31,6 @@ export default function OrderForm({ products, customers: initialCustomers, locat
     if (!customerPhone.trim()) return setError("رقم الهاتف مطلوب");
     if (!address.trim()) return setError("العنوان مطلوب");
     if (!governorate.trim()) return setError("المحافظة مطلوبة");
-    if (!locationId) return setError("لازم تحدد المكان اللي هيتجهز منه الأوردر");
     const items = lines.filter((l) => l.productId && l.quantity && parseInt(l.quantity) > 0).map((l) => ({ productId: l.productId, quantity: parseInt(l.quantity) }));
     if (items.length === 0) return setError("لازم تضيف صنف واحد على الأقل بكمية صحيحة");
     start(async () => {
@@ -48,7 +46,6 @@ export default function OrderForm({ products, customers: initialCustomers, locat
           deliveryNotes: deliveryNotes.trim() || undefined,
           source: source as any,
           prepaid,
-          locationId,
           items,
         });
         setOpen(false);
@@ -114,12 +111,9 @@ export default function OrderForm({ products, customers: initialCustomers, locat
           </div>
           <label className="flex items-center gap-2 text-sm mt-6"><input type="checkbox" checked={prepaid} onChange={(e) => setPrepaid(e.target.checked)} /> العميل دافع مقدمًا</label>
         </div>
-        <div>
-          <label className="text-xs text-muted">هيتجهز من *</label>
-          <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1">
-            {locations?.map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
-        </div>
+        <p className="text-xs text-muted bg-neutral-50 border rounded-lg px-3 py-2">
+          هيتجهز من إيه المحل أو المخزن؟ ده بيتحدد بعد كده من فريق المخازن/الشحن، مش لازم تحدده أنت دلوقتي.
+        </p>
         <div>
           <label className="text-xs text-muted">ملاحظات الأوردر</label>
           <textarea value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1" rows={2} />
