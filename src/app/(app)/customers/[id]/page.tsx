@@ -40,7 +40,25 @@ export default async function CustomerDetailPage({
         </div>
       </div>
 
-      {customer.type === "TRADER" && <CollectionForm customerId={id} paymentMethods={paymentMethods} />}
+      <CollectionForm customerId={id} paymentMethods={paymentMethods} />
+
+      {customer.orders && customer.orders.length > 0 && (
+        <div className="bg-white rounded-xl shadow p-4 space-y-2">
+          <h2 className="font-bold">أوردرات العميل</h2>
+          <table className="w-full text-sm text-right">
+            <thead><tr className="border-b text-neutral-500"><th className="py-2">الكود</th><th>الحالة</th><th>التاريخ</th></tr></thead>
+            <tbody>
+              {customer.orders.map((o: any) => (
+                <tr key={o.id} className="border-b last:border-0">
+                  <td className="py-2"><a href={`/orders/${o.id}`} className="text-primary underline font-mono text-xs">{o.code}</a></td>
+                  <td>{o.status}</td>
+                  <td className="text-xs">{dateAr(o.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow p-4 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
