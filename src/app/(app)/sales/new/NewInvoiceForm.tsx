@@ -19,6 +19,7 @@ export default function NewInvoiceForm({ products, locations, customers: initial
   const [paidAmount, setPaidAmount] = useState("");
   const [paymentMethodId, setPaymentMethodId] = useState(paymentMethods[0]?.id || "");
   const [source, setSource] = useState("OTHER");
+  const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
 
   const customer = customers.find((c: any) => c.id === customerId);
@@ -67,6 +68,7 @@ export default function NewInvoiceForm({ products, locations, customers: initial
           paidAmount: paid,
           paymentMethodId: paid > 0 ? paymentMethodId : undefined,
           source: source as any,
+          notes: notes.trim() || undefined,
         });
         router.push(`/sales/${inv.id}`);
       } catch (e: any) {
@@ -141,6 +143,10 @@ export default function NewInvoiceForm({ products, locations, customers: initial
           );
         })}
         <button type="button" onClick={() => setLines([...lines, { productId: "", quantity: "1", unitPrice: "", serials: "" }])} className="text-sm text-primary">+ إضافة سطر</button>
+        <div className="pt-2">
+          <label className="text-xs text-muted mb-1 block">ملاحظات على الفاتورة (اختياري)</label>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="أي ملاحظات إضافية تحب تضيفها على الفاتورة..." className="border rounded px-3 py-2 text-sm w-full" />
+        </div>
       </div>
 
       <div className="app-card p-4 space-y-3">
