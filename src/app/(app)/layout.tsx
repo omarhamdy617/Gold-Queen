@@ -79,7 +79,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   );
 
   return (
-    <AppShell sidebar={sidebar} mobileBell={<NotificationsBell alerts={alerts} />}>
+    <AppShell sidebar={sidebar} mobileBell={<NotificationsBell alerts={alerts} align="left" />}>
       <div className="no-print bg-card/95 backdrop-blur border-b border-border p-3 hidden md:flex justify-end sticky top-0 z-10">
         <GlobalSearch />
       </div>
