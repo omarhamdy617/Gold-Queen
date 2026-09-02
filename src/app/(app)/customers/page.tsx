@@ -3,16 +3,32 @@ import { money } from "@/lib/format";
 import Link from "next/link";
 import CustomerForm from "./CustomerForm";
 
-export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  const { q } = await searchParams;
-  const customers = await listCustomers(q);
+export default async function CustomersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; type?: string; owes?: string }>;
+}) {
+  const { q, type, owes } = await searchParams;
+  const customers = await listCustomers(q, {
+    type: type === "TRADER" || type === "RETAIL" ? type : undefined,
+    owesOnly: owes === "1",
+  });
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">العملاء والتجار</h1>
       <CustomerForm />
-      <form className="flex gap-2">
+      <form className="flex flex-wrap gap-2 items-center">
         <input name="q" defaultValue={q} placeholder="بحث بالاسم أو الهاتف" className="border rounded-lg px-3 py-2 text-sm flex-1 max-w-sm" />
-        <button className="bg-neutral-800 text-white rounded-lg px-4 py-2 text-sm">بحث</button>
+        <select name="type" defaultValue={type || ""} className="border rounded-lg px-3 py-2 text-sm">
+          <option value="">الكل (فرد وتاجر)</option>
+          <option value="TRADER">تجار بس</option>
+          <option value="RETAIL">أفراد بس</option>
+        </select>
+        <label className="flex items-center gap-1.5 text-sm border rounded-lg px-3 py-2">
+          <input type="checkbox" name="owes" value="1" defaultChecked={owes === "1"} /> عليه فلوس بس
+        </label>
+        <button className="bg-neutral-800 text-white rounded-lg px-4 py-2 text-sm">فلترة</button>
+        {(q || type || owes) && <a href="/customers" className="text-xs text-muted underline">مسح الفلاتر</a>}
       </form>
       <div className="bg-white rounded-xl shadow overflow-x-auto">
         <table className="w-full text-sm text-right">
@@ -37,6 +53,9 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
                 <td><Link href={`/customers/${c.id}`} className="text-gold text-xs">كشف حساب</Link></td>
               </tr>
             ))}
+            {customers.length === 0 && (
+              <tr><td colSpan={6} className="py-6 text-center text-muted">مفيش عملاء مطابقين للفلترة دي</td></tr>
+            )}
           </tbody>
         </table>
       </div>
