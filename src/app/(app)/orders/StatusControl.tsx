@@ -6,12 +6,13 @@ import { useRouter } from "next/navigation";
 const LABELS: Record<string, string> = { PREPARING: "قيد التجهيز", SHIPPED: "في الشحن", DELIVERED: "تم التسليم", RETURNED: "مرتجع" };
 const COLORS: Record<string, string> = { PREPARING: "bg-neutral-200", SHIPPED: "bg-blue-200", DELIVERED: "bg-green-200", RETURNED: "bg-red-200" };
 
-export default function StatusControl({ orderId, status, canEdit = true }: { orderId: string; status: string; canEdit?: boolean }) {
+export default function StatusControl({ orderId, status, canEdit = true, customerPhone }: { orderId: string; status: string; canEdit?: boolean; customerPhone?: string }) {
   const [pending, start] = useTransition();
   const router = useRouter();
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [collectionStatus, setCollectionStatus] = useState<"PENDING" | "COLLECTED">("COLLECTED");
   const [collectedAmount, setCollectedAmount] = useState("");
+  const [confirmPhone, setConfirmPhone] = useState("");
   const [returnReason, setReturnReason] = useState("");
   const [error, setError] = useState("");
 
@@ -34,8 +35,11 @@ export default function StatusControl({ orderId, status, canEdit = true }: { ord
   function confirmSpecial() {
     setError("");
     if (pendingStatus === "DELIVERED") {
+      const digits = confirmPhone.replace(/\D/g, "");
+      if (digits.length !== 11) return setError("رقم تأكيد العميل لازم يبقى 11 رقم بالظبط");
+      if (customerPhone && digits !== customerPhone.replace(/\D/g, "")) return setError("رقم الهاتف اللي كتبته مش مطابق لرقم العميل المسجل في الأوردر");
       if (collectionStatus === "COLLECTED" && (!collectedAmount || parseFloat(collectedAmount) < 0)) {
-        return setError("أدخل المبلغ المحصّل");
+        return setError("أدخل المبلغ المحصّل (سعر الأوردر)");
       }
       start(async () => {
         try {
@@ -65,16 +69,24 @@ export default function StatusControl({ orderId, status, canEdit = true }: { ord
 
   if (pendingStatus) {
     return (
-      <div className="bg-neutral-50 border rounded-lg p-2 space-y-2 min-w-[200px]">
+      <div className="bg-neutral-50 border rounded-lg p-2 space-y-2 min-w-[220px]">
         {pendingStatus === "DELIVERED" && (
           <>
+            <div className="text-xs font-semibold">تأكيد رقم هاتف العميل (11 رقم)</div>
+            <input
+              maxLength={11}
+              placeholder="01xxxxxxxxx"
+              value={confirmPhone}
+              onChange={(e) => setConfirmPhone(e.target.value.replace(/\D/g, ""))}
+              className="border rounded px-2 py-1 text-xs w-full"
+            />
             <div className="text-xs font-semibold">حالة التحصيل؟</div>
             <select value={collectionStatus} onChange={(e) => setCollectionStatus(e.target.value as any)} className="border rounded px-2 py-1 text-xs w-full">
               <option value="COLLECTED">تم التحصيل</option>
               <option value="PENDING">لسه ما اتحصلش</option>
             </select>
             {collectionStatus === "COLLECTED" && (
-              <input type="number" step="0.01" placeholder="المبلغ المحصّل" value={collectedAmount} onChange={(e) => setCollectedAmount(e.target.value)} className="border rounded px-2 py-1 text-xs w-full" />
+              <input type="number" step="0.01" placeholder="سعر الأوردر (المبلغ المحصّل)" value={collectedAmount} onChange={(e) => setCollectedAmount(e.target.value)} className="border rounded px-2 py-1 text-xs w-full" />
             )}
           </>
         )}
