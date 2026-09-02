@@ -2,7 +2,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { createSalesInvoice } from "@/actions/sales";
 import { useRouter } from "next/navigation";
-import CustomerPicker, { type PickerCustomer } from "@/components/CustomerPicker";
+import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
 
 type Line = { productId: string; quantity: string; unitPrice: string; serials: string };
 
@@ -10,8 +10,9 @@ export default function NewInvoiceForm({ products, locations, customers: initial
   const router = useRouter();
   const [pending, start] = useTransition();
   const [locationId, setLocationId] = useState(locations[0]?.id || "");
-  const [customers, setCustomers] = useState<PickerCustomer[]>(initialCustomers);
-  const [customerId, setCustomerId] = useState("");
+  const [customers] = useState<SimpleCustomer[]>(initialCustomers);
+  const [customerField, setCustomerField] = useState<SimpleCustomerValue>({ customerId: "", name: "", phone: "", type: "RETAIL" });
+  const customerId = customerField.customerId;
   const [lines, setLines] = useState<Line[]>([{ productId: "", quantity: "1", unitPrice: "", serials: "" }]);
   const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
   const [discountValue, setDiscountValue] = useState("0");
@@ -22,8 +23,7 @@ export default function NewInvoiceForm({ products, locations, customers: initial
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
 
-  const customer = customers.find((c: any) => c.id === customerId);
-  const priceKey = customer?.type === "TRADER" ? "wholesalePrice" : "retailPrice";
+  const priceKey = customerField.type === "TRADER" ? "wholesalePrice" : "retailPrice";
 
   const validLines = lines.filter((l) => l.productId && parseFloat(l.quantity) > 0);
   const subtotal = validLines.reduce((s, l) => s + (parseFloat(l.quantity) || 0) * (parseFloat(l.unitPrice) || 0), 0);
@@ -56,6 +56,9 @@ export default function NewInvoiceForm({ products, locations, customers: initial
         const paid = paymentStatus === "PAID" ? total : paymentStatus === "PARTIAL" ? parseFloat(paidAmount) || 0 : 0;
         const inv = await createSalesInvoice({
           customerId: customerId || undefined,
+          customerName: !customerId ? customerField.name.trim() || undefined : undefined,
+          customerPhone: !customerId ? customerField.phone.trim() || undefined : undefined,
+          customerType: !customerId ? customerField.type : undefined,
           locationId,
           items: validLines.map((l) => ({
             productId: l.productId,
@@ -103,13 +106,7 @@ export default function NewInvoiceForm({ products, locations, customers: initial
           </div>
         </div>
         <div>
-          <CustomerPicker
-            customers={customers}
-            value={customerId}
-            onChange={(id) => setCustomerId(id)}
-            onCreated={(c) => setCustomers((prev) => [...prev, c])}
-            label="العميل (اختياري - اكتب اسم أو رقم هاتف عشان تدور)"
-          />
+          <SimpleCustomerField customers={customers} value={customerField} onChange={setCustomerField} />
         </div>
       </div>
 
