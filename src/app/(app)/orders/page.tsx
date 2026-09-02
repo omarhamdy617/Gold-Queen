@@ -54,7 +54,7 @@ export default async function OrdersPage() {
                 <td>{sourceLabel(o.source)}</td>
                 <td className="text-xs">{o.shippingMethod ? `${shipLabel(o.shippingMethod)} - ${o.courierName || o.shippingCompanyName || ""}` : "-"}</td>
                 <td>{o.prepaid ? "نعم" : "لا"}</td>
-                <td><StatusControl orderId={o.id} status={o.status} canEdit={canShip} /></td>
+                <td><StatusControl orderId={o.id} status={o.status} canEdit={canShip} customerPhone={o.customerPhone} /></td>
                 <td className="text-xs">{dateAr(o.createdAt)}</td>
                 {canShip && (
                   <td className="p-2">
