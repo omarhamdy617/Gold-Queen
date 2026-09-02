@@ -49,7 +49,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     { header: "دائن", key: "credit", width: 15 },
   ];
   for (const t of timeline) {
-    sheet.addRow({ date: new Date(t.date).toLocaleString("ar-EG"), type: t.type, ref: t.ref, debit: t.debit || "", credit: t.credit || "" });
+    sheet.addRow({ date: new Date(t.date).toLocaleString("en-GB"), type: t.type, ref: t.ref, debit: t.debit || "", credit: t.credit || "" });
   }
   const buf = await wb.xlsx.writeBuffer();
   return new NextResponse(new Uint8Array(buf as ArrayBuffer), {
