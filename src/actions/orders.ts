@@ -6,6 +6,8 @@ import { adjustStock } from "@/lib/ops";
 import { revalidatePath } from "next/cache";
 
 // -------------------- تسجيل الأوردر (السلز/الكول سنتر) --------------------
+// المكان اللي هيتجهز منه الأوردر بقى اختياري وقت التسجيل - بيتحدد بعد كده في خطوة منفصلة
+// (اللي بيسجل الأوردر مش لازم يكون هو نفسه المسؤول عن تحديد المخزون/الفرع)
 export async function createOrder(input: {
   invoiceId?: string;
   customerId?: string;
@@ -19,7 +21,7 @@ export async function createOrder(input: {
   items: { productId: string; quantity: number }[];
   source: "WEBSITE" | "PHONE" | "WHATSAPP" | "FACEBOOK" | "OTHER";
   prepaid: boolean;
-  locationId: string;
+  locationId?: string;
 }) {
   await requirePermission("orders.manage");
   const session = await requireSession();
@@ -28,17 +30,34 @@ export async function createOrder(input: {
   if (!input.customerPhone?.trim()) throw new Error("رقم الهاتف مطلوب");
   if (!input.address?.trim()) throw new Error("العنوان مطلوب");
   if (!input.governorate?.trim()) throw new Error("المحافظة مطلوبة");
-  if (!input.locationId) throw new Error("لازم تحدد المكان اللي هيتجهز منه الأوردر");
   if (!input.items || input.items.length === 0) throw new Error("لازم تضيف صنف واحد على الأقل");
 
   const order = await db.transaction(async (tx) => {
+    // ربط/إنشاء العميل تلقائيًا بالهاتف عشان منعملش عميل مكرر ولما نكتب نفس الرقم تاني يترجعلنا نفس العميل
+    let customerId = input.customerId;
+    const phone = input.customerPhone.trim();
+    if (!customerId && phone) {
+      const [existing] = await tx.select().from(schema.customers).where(eq(schema.customers.phone, phone));
+      if (existing) {
+        customerId = existing.id;
+        // حدّث بيانات العميل بأحدث عنوان/اسم لو اتغيروا
+        await tx.update(schema.customers).set({ name: input.customerName.trim(), address: input.address.trim() }).where(eq(schema.customers.id, existing.id));
+      } else {
+        const [created] = await tx
+          .insert(schema.customers)
+          .values({ name: input.customerName.trim(), phone, type: "RETAIL", address: input.address.trim() })
+          .returning();
+        customerId = created.id;
+      }
+    }
+
     const code = genCode("ORD");
     const [order] = await tx
       .insert(schema.orders)
       .values({
         code,
         invoiceId: input.invoiceId,
-        customerId: input.customerId,
+        customerId,
         customerName: input.customerName,
         customerPhone: input.customerPhone,
         customerPhone2: input.customerPhone2,
@@ -49,23 +68,57 @@ export async function createOrder(input: {
         source: input.source,
         prepaid: input.prepaid,
         status: "PREPARING",
-        locationId: input.locationId,
+        locationId: input.locationId || undefined,
         createdById: session.userId,
       })
       .returning();
     for (const item of input.items) {
       if (!item.productId || !item.quantity || item.quantity <= 0) throw new Error("فيه سطر صنف غير صحيح");
       await tx.insert(schema.orderItems).values({ orderId: order.id, productId: item.productId, quantity: item.quantity });
-      const newQty = await adjustStock(tx, item.productId, input.locationId, -item.quantity);
-      if (newQty < 0) {
-        const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, item.productId));
-        throw new Error(`الكمية المتاحة من "${product?.name || "المنتج"}" في المكان ده مش كفاية للأوردر ده`);
+      // لو المكان محدد من الأول بننقص المخزون فورًا، ولو لسه هيتحدد بعدين بننقصه وقت تحديد المكان (assignOrderLocation)
+      if (input.locationId) {
+        const newQty = await adjustStock(tx, item.productId, input.locationId, -item.quantity);
+        if (newQty < 0) {
+          const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, item.productId));
+          throw new Error(`الكمية المتاحة من "${product?.name || "المنتج"}" في المكان ده مش كفاية للأوردر ده`);
+        }
       }
     }
     return order;
   });
 
   await logAudit({ action: "CREATE", entityType: "Order", entityId: order.id, after: order });
+  revalidatePath("/orders");
+  revalidatePath("/products");
+  revalidatePath("/customers");
+  return order;
+}
+
+// -------------------- تحديد المكان اللي هيتجهز منه الأوردر (خطوة منفصلة بعد التسجيل) --------------------
+export async function assignOrderLocation(orderId: string, locationId: string) {
+  await requirePermission("orders.ship");
+  const session = await requireSession();
+  if (!locationId) throw new Error("لازم تحدد المكان");
+
+  const before = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).then((r) => r[0]);
+  if (!before) throw new Error("الأوردر غير موجود");
+  if (before.locationId) throw new Error("المكان اتحدد للأوردر ده بالفعل");
+
+  const items = await db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, orderId));
+
+  await db.transaction(async (tx) => {
+    for (const item of items) {
+      const newQty = await adjustStock(tx, item.productId, locationId, -item.quantity);
+      if (newQty < 0) {
+        const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, item.productId));
+        throw new Error(`الكمية المتاحة من "${product?.name || "المنتج"}" في المكان ده مش كفاية للأوردر ده`);
+      }
+    }
+    await tx.update(schema.orders).set({ locationId, assignedById: session.userId, assignedAt: new Date(), updatedAt: new Date() }).where(eq(schema.orders.id, orderId));
+  });
+
+  const [order] = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId));
+  await logAudit({ action: "ASSIGN_LOCATION", entityType: "Order", entityId: orderId, before, after: order });
   revalidatePath("/orders");
   revalidatePath("/products");
   return order;
@@ -79,6 +132,10 @@ export async function assignOrderShipping(orderId: string, input: {
 }) {
   await requirePermission("orders.ship");
   const session = await requireSession();
+
+  const existingOrder = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).then((r) => r[0]);
+  if (!existingOrder) throw new Error("الأوردر غير موجود");
+  if (!existingOrder.locationId) throw new Error("لازم تحدد المحل/المخزن اللي هيتجهز منه الأوردر الأول قبل ما تحدد الشحن");
 
   let courierName: string | undefined;
   let shippingCompanyName: string | undefined;
