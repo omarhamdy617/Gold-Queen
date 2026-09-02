@@ -6,6 +6,7 @@ import { dateAr, money } from "@/lib/format";
 import OrderForm from "./OrderForm";
 import StatusControl from "./StatusControl";
 import ShippingAssignForm from "./ShippingAssignForm";
+import AssignLocationForm from "./AssignLocationForm";
 import Link from "next/link";
 
 export default async function OrdersPage() {
@@ -38,7 +39,7 @@ export default async function OrdersPage() {
           <thead>
             <tr className="border-b text-muted">
               <th className="p-3">الكود</th><th>العميل</th><th>الهاتف</th><th>العنوان</th><th>المحافظة</th><th>المصدر</th><th>الشحن</th><th>مدفوع مقدمًا</th><th>الحالة</th><th>التاريخ</th>
-              {canShip && <th>تحديد الشحن</th>}
+              {canShip && <th>المكان / الشحن</th>}
             </tr>
           </thead>
           <tbody>
@@ -58,7 +59,9 @@ export default async function OrdersPage() {
                 <td className="text-xs">{dateAr(o.createdAt)}</td>
                 {canShip && (
                   <td className="p-2">
-                    {!o.shippingMethod ? (
+                    {!o.locationId ? (
+                      <AssignLocationForm orderId={o.id} locations={locations} />
+                    ) : !o.shippingMethod ? (
                       <ShippingAssignForm orderId={o.id} couriers={couriers} shippingCompanies={shippingCompanies} />
                     ) : (
                       <span className="text-xs text-muted">تم التحديد</span>
