@@ -595,6 +595,7 @@ export const settings = pgTable("settings", {
   largeInvoiceAlert: money("large_invoice_alert").notNull().default("10000"),
   adminWhatsapp: varchar("admin_whatsapp", { length: 50 }),
   backupFrequency: varchar("backup_frequency", { length: 20 }).notNull().default("daily"),
+  returnReasons: text("return_reasons"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
