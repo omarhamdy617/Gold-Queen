@@ -12,6 +12,7 @@ export default function SettingsForm({ settings }: { settings: any }) {
     defaultVatRate: settings?.defaultVatRate || "14",
     largeInvoiceAlert: settings?.largeInvoiceAlert || "10000",
     adminWhatsapp: settings?.adminWhatsapp || "",
+    returnReasons: settings?.returnReasons || "منتج تالف\nعيب مصنعي\nغير مطابق للمواصفات\nالعميل غيّر رأيه\nوصل بالخطأ / كمية زيادة\nأخرى",
   });
   const [saved, setSaved] = useState(false);
 
@@ -28,6 +29,7 @@ export default function SettingsForm({ settings }: { settings: any }) {
             defaultVatRate: parseFloat(form.defaultVatRate),
             largeInvoiceAlert: parseFloat(form.largeInvoiceAlert),
             adminWhatsapp: form.adminWhatsapp,
+            returnReasons: form.returnReasons,
           });
           setSaved(true);
           setTimeout(() => setSaved(false), 2000);
@@ -67,6 +69,10 @@ export default function SettingsForm({ settings }: { settings: any }) {
       <div>
         <label className="text-xs text-muted">رقم واتساب الأدمن للتنبيهات</label>
         <input value={form.adminWhatsapp} onChange={(e) => setForm({ ...form, adminWhatsapp: e.target.value })} className="border rounded px-3 py-2 text-sm w-full mt-1" placeholder="مثال: 201001234567" />
+      </div>
+      <div>
+        <label className="text-xs text-muted">أسباب المرتجعات (سطر لكل سبب - دي اللي هتظهر في قائمة اختيار سبب المرتجع)</label>
+        <textarea value={form.returnReasons} onChange={(e) => setForm({ ...form, returnReasons: e.target.value })} rows={6} className="border rounded px-3 py-2 text-sm w-full mt-1 font-mono" />
       </div>
       <button disabled={pending} className="bg-primary text-white rounded-lg px-4 py-2 text-sm">{saved ? "تم الحفظ ✓" : "حفظ الإعدادات"}</button>
     </form>
