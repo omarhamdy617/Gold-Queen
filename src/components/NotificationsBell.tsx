@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AlertItem } from "@/actions/notifications";
 
-export default function NotificationsBell({ alerts }: { alerts: AlertItem[] }) {
+export default function NotificationsBell({ alerts, align = "right" }: { alerts: AlertItem[]; align?: "left" | "right" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const total = alerts.reduce((s, a) => s + a.count, 0);
@@ -31,7 +31,12 @@ export default function NotificationsBell({ alerts }: { alerts: AlertItem[] }) {
       </button>
 
       {open && (
-        <div className="absolute top-12 right-0 w-72 max-w-[85vw] bg-card text-foreground rounded-xl shadow-xl border border-border overflow-hidden z-50">
+        <div
+          className={
+            "absolute top-12 w-72 max-w-[85vw] bg-card text-foreground rounded-xl shadow-xl border border-border overflow-hidden z-50 " +
+            (align === "left" ? "left-0" : "right-0")
+          }
+        >
           <div className="p-3 border-b border-border font-bold text-sm">الإشعارات</div>
           {alerts.length === 0 ? (
             <div className="p-4 text-sm text-muted text-center">مفيش تنبيهات جديدة 👍</div>
