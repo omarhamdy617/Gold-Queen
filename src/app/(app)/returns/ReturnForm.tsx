@@ -1,7 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
 import { createReturnRequest } from "@/actions/returns";
-import { RETURN_REASONS } from "@/lib/returnReasons";
 import { useRouter } from "next/navigation";
 import CustomerPicker from "@/components/CustomerPicker";
 
@@ -14,7 +13,7 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-export default function ReturnForm({ products, customers: initialCustomers, suppliers }: any) {
+export default function ReturnForm({ products, customers: initialCustomers, suppliers, reasons }: any) {
   const [customers, setCustomers] = useState(initialCustomers);
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
@@ -22,7 +21,7 @@ export default function ReturnForm({ products, customers: initialCustomers, supp
   const [kind, setKind] = useState<"SALE_RETURN" | "PURCHASE_RETURN">("SALE_RETURN");
   const [customerId, setCustomerId] = useState("");
   const [supplierId, setSupplierId] = useState("");
-  const [reasonCategory, setReasonCategory] = useState(RETURN_REASONS[0]);
+  const [reasonCategory, setReasonCategory] = useState(reasons[0]);
   const [reason, setReason] = useState("");
   const [imageUrl, setImageUrl] = useState<string | undefined>();
   const [imageName, setImageName] = useState("");
@@ -90,7 +89,7 @@ export default function ReturnForm({ products, customers: initialCustomers, supp
         <div>
           <label className="text-xs text-muted">سبب المرتجع *</label>
           <select value={reasonCategory} onChange={(e) => setReasonCategory(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1">
-            {RETURN_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+            {reasons.map((r: string) => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
         <div>
