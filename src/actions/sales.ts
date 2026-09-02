@@ -7,6 +7,10 @@ import { revalidatePath } from "next/cache";
 
 type InvoiceInput = {
   customerId?: string;
+  // لو مفيش customerId جاهز، تقدر تبعت اسم/رقم هاتف بس وهيتسجل عميل جديد تلقائيًا (أو يترَبَط بعميل موجود بنفس الرقم)
+  customerName?: string;
+  customerPhone?: string;
+  customerType?: "RETAIL" | "TRADER";
   locationId: string;
   items: { productId: string; quantity: number; unitPrice: number; serials?: string[] }[];
   discount: number;
@@ -38,9 +42,37 @@ export async function createSalesInvoice(input: InvoiceInput) {
   }
 
   const result = await db.transaction(async (tx) => {
+    // ربط/إنشاء العميل تلقائيًا بالهاتف لو مبعتش customerId جاهز (اختيار من البحث) وبعتّ اسم و/أو رقم هاتف بس -
+    // بنفس أسلوب تسجيل الأوردرات: لو الرقم مسجل قبل كده بنربط بنفس العميل، ولو رقم جديد بنسجله عميل جديد أوتوماتيك
+    let customerId = input.customerId;
+    if (!customerId && (input.customerName?.trim() || input.customerPhone?.trim())) {
+      const phone = input.customerPhone?.trim();
+      if (phone) {
+        const [existing] = await tx.select().from(schema.customers).where(eq(schema.customers.phone, phone)).for("update");
+        if (existing) {
+          customerId = existing.id;
+          if (input.customerName?.trim() && input.customerName.trim() !== existing.name) {
+            await tx.update(schema.customers).set({ name: input.customerName.trim() }).where(eq(schema.customers.id, existing.id));
+          }
+        } else {
+          const [created] = await tx
+            .insert(schema.customers)
+            .values({ name: input.customerName?.trim() || "عميل بدون اسم", phone, type: input.customerType || "RETAIL" })
+            .returning();
+          customerId = created.id;
+        }
+      } else if (input.customerName?.trim()) {
+        const [created] = await tx
+          .insert(schema.customers)
+          .values({ name: input.customerName.trim(), type: input.customerType || "RETAIL" })
+          .returning();
+        customerId = created.id;
+      }
+    }
+
     // فحص حد الائتمان بيتم *جوه* الـ transaction وبعد قفل صف العميل، عشان نمنع تجاوز الحد لو فيه فاتورتين بتتسجلوا لنفس العميل في نفس اللحظة
-    if (input.customerId && input.paymentStatus !== "PAID") {
-      const [customer] = await tx.select().from(schema.customers).where(eq(schema.customers.id, input.customerId)).for("update");
+    if (customerId && input.paymentStatus !== "PAID") {
+      const [customer] = await tx.select().from(schema.customers).where(eq(schema.customers.id, customerId)).for("update");
       if (customer) {
         const unpaid = total - input.paidAmount;
         const check = checkCreditLimit(customer, unpaid);
@@ -53,7 +85,7 @@ export async function createSalesInvoice(input: InvoiceInput) {
       .insert(schema.salesInvoices)
       .values({
         code,
-        customerId: input.customerId,
+        customerId,
         locationId: input.locationId,
         subtotal: subtotal.toFixed(2),
         discount: input.discount.toFixed(2),
@@ -97,9 +129,9 @@ export async function createSalesInvoice(input: InvoiceInput) {
       }
     }
 
-    if (input.customerId) {
+    if (customerId) {
       const unpaid = total - input.paidAmount;
-      if (unpaid !== 0) await updateCustomerBalance(tx, input.customerId, unpaid);
+      if (unpaid !== 0) await updateCustomerBalance(tx, customerId, unpaid);
     }
 
     if (input.paidAmount > 0 && input.paymentMethodId) {
