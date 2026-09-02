@@ -4,6 +4,7 @@ import { listPaymentMethods } from "@/actions/cash";
 import { money } from "@/lib/format";
 import ConsignmentForm from "./ConsignmentForm";
 import SettleForm from "./SettleForm";
+import ConsignmentDetail from "./ConsignmentDetail";
 
 export default async function ConsignmentsPage() {
   const [consignments, employees, products, locations, paymentMethods] = await Promise.all([
@@ -20,6 +21,7 @@ export default async function ConsignmentsPage() {
             <div className="font-bold">{c.holderName}</div>
             <div className={`text-lg font-bold ${Number(c.balance) > 0 ? "text-red-600" : "text-green-600"}`}>{money(c.balance)}</div>
             <SettleForm consignmentId={c.id} paymentMethods={paymentMethods} />
+            <ConsignmentDetail consignmentId={c.id} locations={locations} />
           </div>
         ))}
         {consignments.length === 0 && <p className="text-muted text-sm">لا يوجد عهدة مسجلة بعد</p>}
