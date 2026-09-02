@@ -2,8 +2,11 @@
 import { useState, useTransition } from "react";
 import { createOrder } from "@/actions/orders";
 import { useRouter } from "next/navigation";
+import CustomerPicker from "@/components/CustomerPicker";
+import { EGYPT_GOVERNORATES } from "@/lib/governorates";
 
-export default function OrderForm({ products, customers, locations }: any) {
+export default function OrderForm({ products, customers: initialCustomers, locations }: any) {
+  const [customers, setCustomers] = useState(initialCustomers);
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -22,15 +25,6 @@ export default function OrderForm({ products, customers, locations }: any) {
   const [lines, setLines] = useState([{ productId: "", quantity: "" }]);
 
   if (!open) return <button onClick={() => setOpen(true)} className="bg-gold text-white rounded-lg px-4 py-2 text-sm">+ أوردر جديد</button>;
-
-  function onCustomerSelect(id: string) {
-    setCustomerId(id);
-    const c = customers.find((x: any) => x.id === id);
-    if (c) {
-      setCustomerName(c.name || "");
-      setCustomerPhone(c.phone || "");
-    }
-  }
 
   function submit() {
     setError("");
@@ -71,10 +65,19 @@ export default function OrderForm({ products, customers, locations }: any) {
 
       <div className="space-y-3">
         <div className="text-xs font-semibold text-muted uppercase tracking-wide">بيانات العميل والتوصيل</div>
-        <select value={customerId} onChange={(e) => onCustomerSelect(e.target.value)} className="border rounded px-3 py-2 text-sm w-full">
-          <option value="">بدون عميل مسجل (بيانات جديدة)</option>
-          {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        <CustomerPicker
+          customers={customers}
+          value={customerId}
+          onChange={(id, c) => {
+            setCustomerId(id);
+            if (c) {
+              setCustomerName(c.name || "");
+              setCustomerPhone(c.phone || "");
+            }
+          }}
+          onCreated={(c) => setCustomers((prev: any) => [...prev, c])}
+          label=""
+        />
         <div className="grid sm:grid-cols-2 gap-3">
           <div>
             <label className="text-xs text-muted">اسم العميل *</label>
@@ -92,7 +95,10 @@ export default function OrderForm({ products, customers, locations }: any) {
           </div>
           <div>
             <label className="text-xs text-muted">المحافظة *</label>
-            <input value={governorate} onChange={(e) => setGovernorate(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1" />
+            <select value={governorate} onChange={(e) => setGovernorate(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1">
+              <option value="">اختر المحافظة</option>
+              {EGYPT_GOVERNORATES.map((g) => <option key={g} value={g}>{g}</option>)}
+            </select>
           </div>
         </div>
         <div>
