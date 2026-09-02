@@ -131,7 +131,7 @@ export async function getSettings() {
   return s;
 }
 
-export async function updateSettings(data: Partial<{ companyName: string; companyAddress: string; companyPhone: string; companyPhone2: string; defaultVatRate: number; largeInvoiceAlert: number; adminWhatsapp: string; backupFrequency: string }>) {
+export async function updateSettings(data: Partial<{ companyName: string; companyAddress: string; companyPhone: string; companyPhone2: string; defaultVatRate: number; largeInvoiceAlert: number; adminWhatsapp: string; backupFrequency: string; returnReasons: string }>) {
   await requirePermission("settings.manage");
   const existing = await getSettings();
   const payload: any = { ...data, updatedAt: new Date() };
@@ -143,4 +143,14 @@ export async function updateSettings(data: Partial<{ companyName: string; compan
     await db.insert(schema.settings).values({ id: 1, ...payload });
   }
   revalidatePath("/settings");
+  revalidatePath("/returns");
+}
+
+const DEFAULT_RETURN_REASONS = ["منتج تالف", "عيب مصنعي", "غير مطابق للمواصفات", "العميل غيّر رأيه", "وصل بالخطأ / كمية زيادة", "أخرى"];
+
+export async function getReturnReasons() {
+  const s = await getSettings();
+  if (!s?.returnReasons) return DEFAULT_RETURN_REASONS;
+  const list = s.returnReasons.split("\n").map((r) => r.trim()).filter(Boolean);
+  return list.length > 0 ? list : DEFAULT_RETURN_REASONS;
 }
