@@ -49,7 +49,10 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
 
         <div className="space-y-1 text-sm border-t pt-3">
           <div className="flex justify-between"><span>الإجمالي الفرعي</span><span>{money(invoice.subtotal)}</span></div>
-          <div className="flex justify-between"><span>الخصم</span><span>{money(invoice.discount)}</span></div>
+          <div className="flex justify-between">
+            <span>الخصم{Number(invoice.subtotal) > 0 && Number(invoice.discount) > 0 ? ` (${((Number(invoice.discount) / Number(invoice.subtotal)) * 100).toFixed(1)}%)` : ""}</span>
+            <span>{money(invoice.discount)}</span>
+          </div>
           <div className="flex justify-between font-bold text-base"><span>الإجمالي</span><span>{money(invoice.total)}</span></div>
           <div className="flex justify-between"><span>المدفوع</span><span>{money(invoice.paidAmount)}</span></div>
           <div className="flex justify-between text-red-600"><span>المتبقي</span><span>{money(Number(invoice.total) - Number(invoice.paidAmount))}</span></div>
