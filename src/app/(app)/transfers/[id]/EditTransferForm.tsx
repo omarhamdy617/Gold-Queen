@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { updateTransfer } from "@/actions/transfers";
 import { useRouter } from "next/navigation";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function EditTransferForm({ transfer, items, products, locations }: any) {
   const [open, setOpen] = useState(false);
@@ -35,7 +36,7 @@ export default function EditTransferForm({ transfer, items, products, locations 
         setOpen(false);
         router.refresh();
       } catch (e: any) {
-        setError(e?.message || "حصل خطأ أثناء حفظ التعديل");
+        setError(friendlyErrorMessage(e, "تعذر حفظ التعديل"));
       }
     });
   }
