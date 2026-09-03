@@ -58,6 +58,31 @@ export async function adjustStock(tx: Tx, productId: string, locationId: string,
   }
 }
 
+/**
+ * بترجع رسالة عربية واضحة لما منتج ميكونش متاح بالكمية المطلوبة في مكان معيّن - بتوضح اسم
+ * المكان، الكمية المتاحة فعليًا هناك، ولو المنتج متاح في مكان تاني (زي المخزن) بتقوله فين بالظبط،
+ * عشان المستخدم يعرف السبب الحقيقي من غير ما يدوّر بنفسه (بدل ما بيقولها "غير متاح" بس من غير تفاصيل).
+ */
+export async function stockShortageMessage(
+  tx: Tx,
+  productId: string,
+  productName: string,
+  locationId: string,
+  availableHere: number,
+  requestedQty: number
+) {
+  const [loc] = await tx.select().from(schema.locations).where(eq(schema.locations.id, locationId));
+  const elsewhere = await tx
+    .select({ name: schema.locations.name, quantity: schema.stocks.quantity })
+    .from(schema.stocks)
+    .innerJoin(schema.locations, eq(schema.locations.id, schema.stocks.locationId))
+    .where(and(eq(schema.stocks.productId, productId), sql`${schema.stocks.quantity} > 0`, sql`${schema.stocks.locationId} != ${locationId}`));
+  const elsewhereText = elsewhere.length
+    ? ` - لكن متاح في مكان تاني: ${elsewhere.map((e: any) => `${e.name} (${e.quantity})`).join("، ")}`
+    : " - وغير متوفر حاليًا في أي مكان تاني";
+  return `المنتج "${productName}" مش متوفر بالكمية دي في "${loc?.name || "المكان المحدد"}" (المتاح هناك فعليًا: ${Math.max(availableHere, 0)} بس، وأنت طالب ${requestedQty})${elsewhereText}`;
+}
+
 export async function updateCustomerBalance(tx: Tx, customerId: string, delta: number) {
   const [c] = await tx.select().from(schema.customers).where(eq(schema.customers.id, customerId)).for("update");
   if (!c) throw new Error("عميل غير موجود");
