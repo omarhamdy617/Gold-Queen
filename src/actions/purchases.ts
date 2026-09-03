@@ -3,6 +3,7 @@ import { db, schema } from "@/db";
 import { eq, desc, ilike, or } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit, genCode, can } from "@/lib/auth";
 import { postCashByPaymentMethod, adjustStock, updateSupplierBalance, updateWeightedAvgCost } from "@/lib/ops";
+import { toActionError } from "@/lib/actionError";
 import { revalidatePath } from "next/cache";
 
 export async function listSuppliers(search?: string) {
@@ -83,6 +84,14 @@ export async function getSupplierLedger(supplierId: string) {
 
 // -------------------- سداد مبلغ لمورد --------------------
 export async function paySupplier(data: { supplierId: string; amount: number; paymentMethodId: string; transferMethod?: string; note?: string }) {
+  try {
+    return await paySupplierInner(data);
+  } catch (e) {
+    return toActionError(e, "تعذر تسجيل السداد");
+  }
+}
+
+async function paySupplierInner(data: Parameters<typeof paySupplier>[0]) {
   await requirePermission("purchases.create");
   const session = await requireSession();
   if (data.amount <= 0) throw new Error("المبلغ لازم يكون أكبر من صفر");
@@ -132,6 +141,14 @@ function validatePurchaseInput(input: PurchaseInput) {
 }
 
 export async function createPurchase(input: PurchaseInput) {
+  try {
+    return await createPurchaseInner(input);
+  } catch (e) {
+    return toActionError(e, "تعذر حفظ فاتورة الشراء");
+  }
+}
+
+async function createPurchaseInner(input: PurchaseInput) {
   await requirePermission("purchases.create");
   const session = await requireSession();
   validatePurchaseInput(input);
@@ -209,6 +226,14 @@ export async function createPurchase(input: PurchaseInput) {
 
 // -------------------- حذف فاتورة مشترى (بيعكس كل أثرها: مخزون + رصيد مورد + خزينة) --------------------
 export async function deletePurchase(id: string) {
+  try {
+    return await deletePurchaseInner(id);
+  } catch (e) {
+    return toActionError(e, "تعذر حذف فاتورة الشراء");
+  }
+}
+
+async function deletePurchaseInner(id: string) {
   await requirePermission("purchases.edit");
   const session = await requireSession();
   const [purchase] = await db.select().from(schema.purchases).where(eq(schema.purchases.id, id));
