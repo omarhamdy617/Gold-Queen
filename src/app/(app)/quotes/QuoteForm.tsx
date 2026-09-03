@@ -4,6 +4,7 @@ import { createQuote } from "@/actions/sales";
 import { useRouter } from "next/navigation";
 import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 export default function QuoteForm({ products, customers: initialCustomers, templates }: any) {
   const [customers] = useState<SimpleCustomer[]>(initialCustomers);
@@ -93,6 +94,7 @@ export default function QuoteForm({ products, customers: initialCustomers, templ
                   isTemplate: asTemplate,
                   templateName: asTemplate ? templateName : undefined,
                 });
+                if (isActionError(q)) { setError(q.error); return; }
                 router.push(`/quotes/${q.id}`);
               } catch (e: any) {
                 setError(friendlyErrorMessage(e, "تعذر حفظ عرض السعر"));
