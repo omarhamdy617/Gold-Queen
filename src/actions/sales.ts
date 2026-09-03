@@ -2,7 +2,7 @@
 import { db, schema } from "@/db";
 import { eq, and, desc } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit, genCode, can } from "@/lib/auth";
-import { postCashByPaymentMethod, adjustStock, updateCustomerBalance, checkCreditLimit } from "@/lib/ops";
+import { postCashByPaymentMethod, adjustStock, updateCustomerBalance, checkCreditLimit, stockShortageMessage } from "@/lib/ops";
 import { revalidatePath } from "next/cache";
 
 type InvoiceInput = {
@@ -116,7 +116,7 @@ export async function createSalesInvoice(input: InvoiceInput) {
       const newQty = await adjustStock(tx, item.productId, input.locationId, -item.quantity);
       if (newQty < 0) {
         const available = newQty + item.quantity;
-        throw new Error(`المنتج "${product.name}" غير متاح بالكمية دي في المكان ده - المتاح فعليًا ${available} بس وأنت طالب ${item.quantity}`);
+        throw new Error(await stockShortageMessage(tx, item.productId, product.name, input.locationId, available, item.quantity));
       }
 
       if (item.serials && item.serials.length) {
