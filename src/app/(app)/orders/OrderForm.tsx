@@ -2,18 +2,19 @@
 import { useState, useTransition } from "react";
 import { createOrder } from "@/actions/orders";
 import { useRouter } from "next/navigation";
-import CustomerPicker from "@/components/CustomerPicker";
+import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
 import { EGYPT_GOVERNORATES } from "@/lib/governorates";
 
 export default function OrderForm({ products, customers: initialCustomers, locations }: any) {
-  const [customers, setCustomers] = useState(initialCustomers);
+  const [customers] = useState<SimpleCustomer[]>(initialCustomers);
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
   const [error, setError] = useState("");
-  const [customerId, setCustomerId] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerField, setCustomerField] = useState<SimpleCustomerValue>({ customerId: "", name: "", phone: "", type: "RETAIL" });
+  const customerId = customerField.customerId;
+  const customerName = customerField.name;
+  const customerPhone = customerField.phone;
   const [customerPhone2, setCustomerPhone2] = useState("");
   const [address, setAddress] = useState("");
   const [governorate, setGovernorate] = useState("");
@@ -62,29 +63,7 @@ export default function OrderForm({ products, customers: initialCustomers, locat
 
       <div className="space-y-3">
         <div className="text-xs font-semibold text-muted uppercase tracking-wide">بيانات العميل والتوصيل</div>
-        <CustomerPicker
-          customers={customers}
-          value={customerId}
-          onChange={(id, c) => {
-            setCustomerId(id);
-            if (c) {
-              setCustomerName(c.name || "");
-              setCustomerPhone(c.phone || "");
-            }
-          }}
-          onCreated={(c) => setCustomers((prev: any) => [...prev, c])}
-          label=""
-        />
-        <div className="grid sm:grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs text-muted">اسم العميل *</label>
-            <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1" />
-          </div>
-          <div>
-            <label className="text-xs text-muted">رقم الهاتف *</label>
-            <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1" />
-          </div>
-        </div>
+        <SimpleCustomerField customers={customers} value={customerField} onChange={setCustomerField} />
         <div className="grid sm:grid-cols-2 gap-3">
           <div>
             <label className="text-xs text-muted">رقم هاتف إضافي (اختياري)</label>
