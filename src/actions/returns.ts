@@ -3,6 +3,7 @@ import { db, schema } from "@/db";
 import { eq, desc } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit, genCode } from "@/lib/auth";
 import { adjustStock, updateCustomerBalance, updateSupplierBalance, postCashByPaymentMethod } from "@/lib/ops";
+import { toActionError } from "@/lib/actionError";
 import { revalidatePath } from "next/cache";
 
 export async function createReturnRequest(input: {
@@ -15,6 +16,14 @@ export async function createReturnRequest(input: {
   reason?: string;
   imageUrl?: string;
 }) {
+  try {
+    return await createReturnRequestInner(input);
+  } catch (e) {
+    return toActionError(e, "تعذر حفظ المرتجع");
+  }
+}
+
+async function createReturnRequestInner(input: Parameters<typeof createReturnRequest>[0]) {
   await requirePermission("returns.create");
   const session = await requireSession();
   const totalAmount = input.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
