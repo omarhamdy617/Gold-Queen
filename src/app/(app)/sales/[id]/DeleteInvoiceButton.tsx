@@ -3,6 +3,7 @@ import { useTransition } from "react";
 import { deleteSalesInvoice } from "@/actions/sales";
 import { useRouter } from "next/navigation";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 export default function DeleteInvoiceButton({ id }: { id: string }) {
   const [pending, start] = useTransition();
@@ -14,7 +15,8 @@ export default function DeleteInvoiceButton({ id }: { id: string }) {
         if (!confirm("متأكد إنك عايز تمسح الفاتورة دي؟ هيرجع المخزون ورصيد العميل والخزينة زي ما كانوا قبلها.")) return;
         start(async () => {
           try {
-            await deleteSalesInvoice(id);
+            const result = await deleteSalesInvoice(id);
+            if (isActionError(result)) { alert(result.error); return; }
             router.push("/sales");
             router.refresh();
           } catch (e: any) {
