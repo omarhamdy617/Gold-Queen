@@ -2,7 +2,7 @@
 import { db, schema } from "@/db";
 import { eq, desc } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit, genCode } from "@/lib/auth";
-import { adjustStock } from "@/lib/ops";
+import { adjustStock, stockShortageMessage } from "@/lib/ops";
 import { revalidatePath } from "next/cache";
 
 // -------------------- تسجيل الأوردر (السلز/الكول سنتر) --------------------
@@ -80,7 +80,8 @@ export async function createOrder(input: {
         const newQty = await adjustStock(tx, item.productId, input.locationId, -item.quantity);
         if (newQty < 0) {
           const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, item.productId));
-          throw new Error(`الكمية المتاحة من "${product?.name || "المنتج"}" في المكان ده مش كفاية للأوردر ده`);
+          const available = newQty + item.quantity;
+          throw new Error(await stockShortageMessage(tx, item.productId, product?.name || "المنتج", input.locationId, available, item.quantity));
         }
       }
     }
@@ -111,7 +112,8 @@ export async function assignOrderLocation(orderId: string, locationId: string) {
       const newQty = await adjustStock(tx, item.productId, locationId, -item.quantity);
       if (newQty < 0) {
         const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, item.productId));
-        throw new Error(`الكمية المتاحة من "${product?.name || "المنتج"}" في المكان ده مش كفاية للأوردر ده`);
+        const available = newQty + item.quantity;
+        throw new Error(await stockShortageMessage(tx, item.productId, product?.name || "المنتج", locationId, available, item.quantity));
       }
     }
     await tx.update(schema.orders).set({ locationId, assignedById: session.userId, assignedAt: new Date(), updatedAt: new Date() }).where(eq(schema.orders.id, orderId));
