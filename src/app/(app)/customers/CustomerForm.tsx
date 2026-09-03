@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { createCustomer } from "@/actions/customers";
 import { useRouter } from "next/navigation";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 export default function CustomerForm() {
   const [open, setOpen] = useState(false);
@@ -20,7 +21,8 @@ export default function CustomerForm() {
         setError("");
         start(async () => {
           try {
-            await createCustomer({ name: form.name, phone: form.phone || undefined, type: form.type, creditLimit: form.creditLimit ? parseFloat(form.creditLimit) : undefined });
+            const result = await createCustomer({ name: form.name, phone: form.phone || undefined, type: form.type, creditLimit: form.creditLimit ? parseFloat(form.creditLimit) : undefined });
+            if (isActionError(result)) { setError(result.error); return; }
             setOpen(false);
             setForm({ name: "", phone: "", type: "RETAIL", creditLimit: "" });
             router.refresh();
