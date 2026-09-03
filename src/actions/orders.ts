@@ -3,6 +3,7 @@ import { db, schema } from "@/db";
 import { eq, desc } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit, genCode } from "@/lib/auth";
 import { adjustStock, stockShortageMessage } from "@/lib/ops";
+import { toActionError } from "@/lib/actionError";
 import { revalidatePath } from "next/cache";
 
 // -------------------- تسجيل الأوردر (السلز/الكول سنتر) --------------------
@@ -23,6 +24,14 @@ export async function createOrder(input: {
   prepaid: boolean;
   locationId?: string;
 }) {
+  try {
+    return await createOrderInner(input);
+  } catch (e) {
+    return toActionError(e, "تعذر حفظ الأوردر");
+  }
+}
+
+async function createOrderInner(input: Parameters<typeof createOrder>[0]) {
   await requirePermission("orders.manage");
   const session = await requireSession();
 
@@ -97,6 +106,14 @@ export async function createOrder(input: {
 
 // -------------------- تحديد المكان اللي هيتجهز منه الأوردر (خطوة منفصلة بعد التسجيل) --------------------
 export async function assignOrderLocation(orderId: string, locationId: string) {
+  try {
+    return await assignOrderLocationInner(orderId, locationId);
+  } catch (e) {
+    return toActionError(e, "تعذر تحديد المكان");
+  }
+}
+
+async function assignOrderLocationInner(orderId: string, locationId: string) {
   await requirePermission("orders.ship");
   const session = await requireSession();
   if (!locationId) throw new Error("لازم تحدد المكان");
@@ -132,6 +149,14 @@ export async function assignOrderShipping(orderId: string, input: {
   courierId?: string;
   shippingCompanyId?: string;
 }) {
+  try {
+    return await assignOrderShippingInner(orderId, input);
+  } catch (e) {
+    return toActionError(e, "تعذر تحديد الشحن");
+  }
+}
+
+async function assignOrderShippingInner(orderId: string, input: Parameters<typeof assignOrderShipping>[1]) {
   await requirePermission("orders.ship");
   const session = await requireSession();
 
@@ -173,6 +198,18 @@ export async function assignOrderShipping(orderId: string, input: {
 
 // -------------------- تحديث حالة الأوردر: تجهيز/شحن/تسليم/مرتجع --------------------
 export async function updateOrderStatus(
+  orderId: string,
+  status: "PREPARING" | "SHIPPED" | "DELIVERED" | "RETURNED",
+  extra?: { collectionStatus?: "PENDING" | "COLLECTED"; collectedAmount?: number; returnReason?: string }
+) {
+  try {
+    return await updateOrderStatusInner(orderId, status, extra);
+  } catch (e) {
+    return toActionError(e, "تعذر تحديث حالة الأوردر");
+  }
+}
+
+async function updateOrderStatusInner(
   orderId: string,
   status: "PREPARING" | "SHIPPED" | "DELIVERED" | "RETURNED",
   extra?: { collectionStatus?: "PENDING" | "COLLECTED"; collectedAmount?: number; returnReason?: string }
