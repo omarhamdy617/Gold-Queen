@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { paySupplier } from "@/actions/purchases";
 import { useRouter } from "next/navigation";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function PaySupplierForm({ supplierId, paymentMethods }: { supplierId: string; paymentMethods: any[] }) {
   const [amount, setAmount] = useState("");
@@ -49,7 +50,7 @@ export default function PaySupplierForm({ supplierId, paymentMethods }: { suppli
               setAmount(""); setTransferMethod(""); setNote("");
               router.refresh();
             } catch (e: any) {
-              setError(e?.message || "حصل خطأ");
+              setError(friendlyErrorMessage(e, "تعذر تسجيل السداد"));
             }
           });
         }}
