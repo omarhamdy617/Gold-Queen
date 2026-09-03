@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { assignOrderShipping } from "@/actions/orders";
 import { useRouter } from "next/navigation";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 export default function ShippingAssignForm({ orderId, couriers, shippingCompanies }: { orderId: string; couriers: any[]; shippingCompanies: any[] }) {
   const [open, setOpen] = useState(false);
@@ -21,11 +22,12 @@ export default function ShippingAssignForm({ orderId, couriers, shippingCompanie
     if (method === "EXTERNAL_COMPANY" && !companyId) return setError("اختر شركة الشحن");
     start(async () => {
       try {
-        await assignOrderShipping(orderId, {
+        const result = await assignOrderShipping(orderId, {
           shippingMethod: method as any,
           courierId: method === "INTERNAL_COURIER" ? courierId : undefined,
           shippingCompanyId: method === "EXTERNAL_COMPANY" ? companyId : undefined,
         });
+        if (isActionError(result)) { setError(result.error); return; }
         setOpen(false);
         router.refresh();
       } catch (e: any) {
