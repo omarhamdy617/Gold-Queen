@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { settleConsignment } from "@/actions/consignments";
 import { useRouter } from "next/navigation";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function SettleForm({ consignmentId, paymentMethods }: { consignmentId: string; paymentMethods: any[] }) {
   const [amount, setAmount] = useState("");
@@ -23,7 +24,7 @@ export default function SettleForm({ consignmentId, paymentMethods }: { consignm
             setAmount("");
             router.refresh();
           } catch (e: any) {
-            setError(e?.message || "حصل خطأ");
+            setError(friendlyErrorMessage(e, "تعذر تسجيل التسوية"));
           }
         });
       }}
