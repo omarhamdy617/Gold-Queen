@@ -4,6 +4,7 @@ import { createOrder } from "@/actions/orders";
 import { useRouter } from "next/navigation";
 import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
 import { EGYPT_GOVERNORATES } from "@/lib/governorates";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function OrderForm({ products, customers: initialCustomers, locations }: any) {
   const [customers] = useState<SimpleCustomer[]>(initialCustomers);
@@ -52,7 +53,7 @@ export default function OrderForm({ products, customers: initialCustomers, locat
         setOpen(false);
         router.refresh();
       } catch (e: any) {
-        setError(e?.message || "حصل خطأ أثناء حفظ الأوردر");
+        setError(friendlyErrorMessage(e, "تعذر حفظ الأوردر"));
       }
     });
   }
