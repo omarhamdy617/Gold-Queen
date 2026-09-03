@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { updateTransfer } from "@/actions/transfers";
 import { useRouter } from "next/navigation";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 export default function EditTransferForm({ transfer, items, products, locations }: any) {
   const [open, setOpen] = useState(false);
@@ -32,7 +33,8 @@ export default function EditTransferForm({ transfer, items, products, locations 
     }
     start(async () => {
       try {
-        await updateTransfer(transfer.id, { fromLocationId, toLocationId, note, items: parsed });
+        const result = await updateTransfer(transfer.id, { fromLocationId, toLocationId, note, items: parsed });
+        if (isActionError(result)) { setError(result.error); return; }
         setOpen(false);
         router.refresh();
       } catch (e: any) {
