@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { assignOrderLocation } from "@/actions/orders";
 import { useRouter } from "next/navigation";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 export default function AssignLocationForm({ orderId, locations }: { orderId: string; locations: any[] }) {
   const [pending, start] = useTransition();
@@ -22,7 +23,8 @@ export default function AssignLocationForm({ orderId, locations }: { orderId: st
             start(async () => {
               setError("");
               try {
-                await assignOrderLocation(orderId, locationId);
+                const result = await assignOrderLocation(orderId, locationId);
+                if (isActionError(result)) { setError(result.error); return; }
                 router.refresh();
               } catch (e: any) {
                 setError(friendlyErrorMessage(e, "تعذر تحديد المكان"));
