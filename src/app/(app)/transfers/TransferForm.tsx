@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { createTransfer } from "@/actions/transfers";
 import { useRouter } from "next/navigation";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 export default function TransferForm({ products, locations }: any) {
   const [open, setOpen] = useState(false);
@@ -42,7 +43,8 @@ export default function TransferForm({ products, locations }: any) {
     }
     start(async () => {
       try {
-        await createTransfer({ fromLocationId, toLocationId, note, items });
+        const result = await createTransfer({ fromLocationId, toLocationId, note, items });
+        if (isActionError(result)) { setError(result.error); return; }
         setOpen(false);
         setLines([{ productId: "", quantity: "" }]);
         router.refresh();
