@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { paySupplier } from "@/actions/purchases";
 import { useRouter } from "next/navigation";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 export default function PaySupplierForm({ supplierId, paymentMethods }: { supplierId: string; paymentMethods: any[] }) {
   const [amount, setAmount] = useState("");
@@ -46,7 +47,8 @@ export default function PaySupplierForm({ supplierId, paymentMethods }: { suppli
           if (!paymentMethodId) return setError("اختر طريقة الدفع");
           start(async () => {
             try {
-              await paySupplier({ supplierId, amount: amt, paymentMethodId, transferMethod: transferMethod || undefined, note: note || undefined });
+              const result = await paySupplier({ supplierId, amount: amt, paymentMethodId, transferMethod: transferMethod || undefined, note: note || undefined });
+              if (isActionError(result)) { setError(result.error); return; }
               setAmount(""); setTransferMethod(""); setNote("");
               router.refresh();
             } catch (e: any) {
