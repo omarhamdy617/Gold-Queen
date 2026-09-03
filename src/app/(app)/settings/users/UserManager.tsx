@@ -3,6 +3,7 @@ import React, { useState, useTransition } from "react";
 import { createUser, toggleUserActive, deleteUser, updateUserPassword, createCustomRole, updateUser, renameRole } from "@/actions/settings";
 import { useRouter } from "next/navigation";
 import PermissionEditor from "./PermissionEditor";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function UserManager({ users, roles }: { users: any[]; roles: any[] }) {
   const [pending, start] = useTransition();
@@ -119,7 +120,7 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
                                 setInfoUser(null);
                                 router.refresh();
                               } catch (e: any) {
-                                setInfoError(e?.message || "حصل خطأ");
+                                setInfoError(friendlyErrorMessage(e, "تعذر حفظ بيانات المستخدم"));
                               }
                             })
                           }
@@ -174,7 +175,7 @@ function RoleRow({ role, onSaved }: { role: any; onSaved: () => void }) {
               await renameRole(role.id, name);
               onSaved();
             } catch (e: any) {
-              setError(e?.message || "حصل خطأ");
+              setError(friendlyErrorMessage(e, "تعذر حفظ اسم الدور"));
             }
           })
         }
