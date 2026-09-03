@@ -39,11 +39,11 @@ export default function ShippingManager({ couriers, shippingCompanies }: { couri
               router.refresh();
             });
           }}
-          className="flex gap-2"
+          className="flex flex-wrap gap-2"
         >
-          <input value={courierName} onChange={(e) => setCourierName(e.target.value)} placeholder="اسم المندوب" className="border rounded px-3 py-2 text-sm flex-1" />
-          <input value={courierPhone} onChange={(e) => setCourierPhone(e.target.value)} placeholder="رقم الهاتف" className="border rounded px-3 py-2 text-sm flex-1" />
-          <button disabled={pending} className="bg-primary text-white rounded-lg px-4 py-2 text-sm">إضافة</button>
+          <input value={courierName} onChange={(e) => setCourierName(e.target.value)} placeholder="اسم المندوب" className="border rounded px-3 py-2 text-sm flex-1 min-w-[120px]" />
+          <input value={courierPhone} onChange={(e) => setCourierPhone(e.target.value)} placeholder="رقم الهاتف" className="border rounded px-3 py-2 text-sm flex-1 min-w-[120px]" />
+          <button disabled={pending} className="bg-primary text-white rounded-lg px-4 py-2 text-sm shrink-0">إضافة</button>
         </form>
       </div>
 
@@ -73,11 +73,11 @@ export default function ShippingManager({ couriers, shippingCompanies }: { couri
               router.refresh();
             });
           }}
-          className="flex gap-2"
+          className="flex flex-wrap gap-2"
         >
-          <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="اسم الشركة" className="border rounded px-3 py-2 text-sm flex-1" />
-          <input value={companyPhone} onChange={(e) => setCompanyPhone(e.target.value)} placeholder="رقم الهاتف" className="border rounded px-3 py-2 text-sm flex-1" />
-          <button disabled={pending} className="bg-primary text-white rounded-lg px-4 py-2 text-sm">إضافة</button>
+          <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="اسم الشركة" className="border rounded px-3 py-2 text-sm flex-1 min-w-[120px]" />
+          <input value={companyPhone} onChange={(e) => setCompanyPhone(e.target.value)} placeholder="رقم الهاتف" className="border rounded px-3 py-2 text-sm flex-1 min-w-[120px]" />
+          <button disabled={pending} className="bg-primary text-white rounded-lg px-4 py-2 text-sm shrink-0">إضافة</button>
         </form>
       </div>
     </div>
