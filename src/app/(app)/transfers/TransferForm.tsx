@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { createTransfer } from "@/actions/transfers";
 import { useRouter } from "next/navigation";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function TransferForm({ products, locations }: any) {
   const [open, setOpen] = useState(false);
@@ -46,7 +47,7 @@ export default function TransferForm({ products, locations }: any) {
         setLines([{ productId: "", quantity: "" }]);
         router.refresh();
       } catch (e: any) {
-        setError(e?.message || "حصل خطأ أثناء تنفيذ التحويل");
+        setError(friendlyErrorMessage(e, "تعذر تنفيذ التحويل"));
       }
     });
   }
