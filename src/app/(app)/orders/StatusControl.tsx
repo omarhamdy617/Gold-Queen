@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { updateOrderStatus } from "@/actions/orders";
 import { useRouter } from "next/navigation";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 const LABELS: Record<string, string> = { PREPARING: "قيد التجهيز", SHIPPED: "في الشحن", DELIVERED: "تم التسليم", RETURNED: "مرتجع" };
 const COLORS: Record<string, string> = { PREPARING: "bg-neutral-200", SHIPPED: "bg-blue-200", DELIVERED: "bg-green-200", RETURNED: "bg-red-200" };
@@ -50,7 +51,7 @@ export default function StatusControl({ orderId, status, canEdit = true, custome
           setPendingStatus(null);
           router.refresh();
         } catch (e: any) {
-          setError(e?.message || "حصل خطأ");
+          setError(friendlyErrorMessage(e, "تعذر تحديث حالة الأوردر"));
         }
       });
     } else if (pendingStatus === "RETURNED") {
@@ -61,7 +62,7 @@ export default function StatusControl({ orderId, status, canEdit = true, custome
           setPendingStatus(null);
           router.refresh();
         } catch (e: any) {
-          setError(e?.message || "حصل خطأ");
+          setError(friendlyErrorMessage(e, "تعذر تحديث حالة الأوردر"));
         }
       });
     }
