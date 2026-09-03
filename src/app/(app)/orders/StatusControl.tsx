@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { updateOrderStatus } from "@/actions/orders";
 import { useRouter } from "next/navigation";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 const LABELS: Record<string, string> = { PREPARING: "قيد التجهيز", SHIPPED: "في الشحن", DELIVERED: "تم التسليم", RETURNED: "مرتجع" };
 const COLORS: Record<string, string> = { PREPARING: "bg-neutral-200", SHIPPED: "bg-blue-200", DELIVERED: "bg-green-200", RETURNED: "bg-red-200" };
@@ -28,8 +29,13 @@ export default function StatusControl({ orderId, status, canEdit = true, custome
       return;
     }
     start(async () => {
-      await updateOrderStatus(orderId, newStatus as any);
-      router.refresh();
+      try {
+        const result = await updateOrderStatus(orderId, newStatus as any);
+        if (isActionError(result)) { setError(result.error); return; }
+        router.refresh();
+      } catch (e: any) {
+        setError(friendlyErrorMessage(e, "تعذر تحديث حالة الأوردر"));
+      }
     });
   }
 
@@ -44,10 +50,11 @@ export default function StatusControl({ orderId, status, canEdit = true, custome
       }
       start(async () => {
         try {
-          await updateOrderStatus(orderId, "DELIVERED", {
+          const result = await updateOrderStatus(orderId, "DELIVERED", {
             collectionStatus,
             collectedAmount: collectionStatus === "COLLECTED" ? parseFloat(collectedAmount) : undefined,
           });
+          if (isActionError(result)) { setError(result.error); return; }
           setPendingStatus(null);
           router.refresh();
         } catch (e: any) {
@@ -58,7 +65,8 @@ export default function StatusControl({ orderId, status, canEdit = true, custome
       if (!returnReason.trim()) return setError("لازم تكتب سبب الإرجاع");
       start(async () => {
         try {
-          await updateOrderStatus(orderId, "RETURNED", { returnReason });
+          const result = await updateOrderStatus(orderId, "RETURNED", { returnReason });
+          if (isActionError(result)) { setError(result.error); return; }
           setPendingStatus(null);
           router.refresh();
         } catch (e: any) {
