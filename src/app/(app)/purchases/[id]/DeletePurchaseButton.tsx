@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deletePurchase } from "@/actions/purchases";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function DeletePurchaseButton({ id }: { id: string }) {
   const [pending, start] = useTransition();
@@ -17,7 +18,7 @@ export default function DeletePurchaseButton({ id }: { id: string }) {
         router.push("/purchases");
         router.refresh();
       } catch (e: any) {
-        setError(e?.message || "حصل خطأ أثناء حذف الفاتورة");
+        setError(friendlyErrorMessage(e, "تعذر حذف الفاتورة"));
       }
     });
   }
