@@ -3,6 +3,7 @@ import { db, schema } from "@/db";
 import { eq, or, ilike, and, gte, lte, desc } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit } from "@/lib/auth";
 import { postCashByPaymentMethod, updateCustomerBalance } from "@/lib/ops";
+import { toActionError } from "@/lib/actionError";
 import { revalidatePath } from "next/cache";
 
 export async function listCustomers(search?: string, filters?: { type?: "RETAIL" | "TRADER"; owesOnly?: boolean }) {
@@ -21,6 +22,14 @@ export async function listCustomers(search?: string, filters?: { type?: "RETAIL"
 }
 
 export async function createCustomer(data: { name: string; phone?: string; type: "RETAIL" | "TRADER"; creditLimit?: number; notes?: string }) {
+  try {
+    return await createCustomerInner(data);
+  } catch (e) {
+    return toActionError(e, "تعذر إضافة العميل");
+  }
+}
+
+async function createCustomerInner(data: Parameters<typeof createCustomer>[0]) {
   await requirePermission("customers.manage");
   if (data.phone) {
     const [existing] = await db.select().from(schema.customers).where(eq(schema.customers.phone, data.phone));
