@@ -2,6 +2,7 @@
 import { useTransition } from "react";
 import { deleteSalesInvoice } from "@/actions/sales";
 import { useRouter } from "next/navigation";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function DeleteInvoiceButton({ id }: { id: string }) {
   const [pending, start] = useTransition();
@@ -17,7 +18,7 @@ export default function DeleteInvoiceButton({ id }: { id: string }) {
             router.push("/sales");
             router.refresh();
           } catch (e: any) {
-            alert(e?.message || "حصل خطأ أثناء الحذف");
+            alert(friendlyErrorMessage(e, "تعذر حذف الفاتورة"));
           }
         });
       }}
