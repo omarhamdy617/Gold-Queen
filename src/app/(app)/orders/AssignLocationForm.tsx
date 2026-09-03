@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { assignOrderLocation } from "@/actions/orders";
 import { useRouter } from "next/navigation";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function AssignLocationForm({ orderId, locations }: { orderId: string; locations: any[] }) {
   const [pending, start] = useTransition();
@@ -24,7 +25,7 @@ export default function AssignLocationForm({ orderId, locations }: { orderId: st
                 await assignOrderLocation(orderId, locationId);
                 router.refresh();
               } catch (e: any) {
-                setError(e?.message || "حصل خطأ");
+                setError(friendlyErrorMessage(e, "تعذر تحديد المكان"));
               }
             })
           }
