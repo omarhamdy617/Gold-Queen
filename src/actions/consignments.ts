@@ -2,7 +2,7 @@
 import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit } from "@/lib/auth";
-import { adjustStock, updateConsignmentBalance, postCashByPaymentMethod } from "@/lib/ops";
+import { adjustStock, updateConsignmentBalance, postCashByPaymentMethod, stockShortageMessage } from "@/lib/ops";
 import { revalidatePath } from "next/cache";
 
 export async function listEmployees() {
@@ -49,7 +49,7 @@ export async function giveConsignment(input: {
       if (newQty < 0) {
         const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, item.productId));
         const available = newQty + item.quantity;
-        throw new Error(`المنتج "${product?.name || ""}" غير متاح بالكمية دي في المكان ده - المتاح فعليًا ${available} بس`);
+        throw new Error(await stockShortageMessage(tx, item.productId, product?.name || "", input.locationId, available, item.quantity));
       }
     }
     await updateConsignmentBalance(tx, consignment.id, totalValue);
