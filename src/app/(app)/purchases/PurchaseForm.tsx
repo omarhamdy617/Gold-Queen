@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { createPurchase, createSupplier } from "@/actions/purchases";
 import { useRouter } from "next/navigation";
 import ProductSearchSelect from "@/components/ProductSearchSelect";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 type Line = { productId: string; quantity: string; unitCost: string; serials: string };
 
@@ -63,7 +64,7 @@ export default function PurchaseForm({ suppliers, products, locations, paymentMe
         setLines([{ productId: "", quantity: "", unitCost: "", serials: "" }]);
         router.refresh();
       } catch (e: any) {
-        setError(e?.message || "حصل خطأ أثناء حفظ فاتورة الشراء");
+        setError(friendlyErrorMessage(e, "تعذر حفظ فاتورة الشراء"));
       }
     });
   }
