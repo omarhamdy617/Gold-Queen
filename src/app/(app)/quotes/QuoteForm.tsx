@@ -3,12 +3,14 @@ import { useState, useTransition } from "react";
 import { createQuote } from "@/actions/sales";
 import { useRouter } from "next/navigation";
 import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function QuoteForm({ products, customers: initialCustomers, templates }: any) {
   const [customers] = useState<SimpleCustomer[]>(initialCustomers);
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
+  const [error, setError] = useState("");
   const [customerField, setCustomerField] = useState<SimpleCustomerValue>({ customerId: "", name: "", phone: "", type: "RETAIL" });
   const customerId = customerField.customerId;
   const customerName = customerField.name;
@@ -76,20 +78,25 @@ export default function QuoteForm({ products, customers: initialCustomers, templ
           <button
             disabled={pending}
             onClick={() => start(async () => {
-              const q = await createQuote({
-                customerId: customerId || undefined,
-                customerName: customerName || undefined,
-                customerPhone: customerPhone || undefined,
-                customerType: !customerId ? customerField.type : undefined,
-                items: lines.filter((l) => l.productId && l.quantity).map((l) => ({ productId: l.productId, quantity: parseInt(l.quantity), unitPrice: parseFloat(l.unitPrice) || 0 })),
-                discountPct: discountPct ? parseFloat(discountPct) : undefined,
-                discountAmt: discountAmt ? parseFloat(discountAmt) : undefined,
-                vatEnabled,
-                vatRate: vatEnabled ? parseFloat(vatRate) : undefined,
-                isTemplate: asTemplate,
-                templateName: asTemplate ? templateName : undefined,
-              });
-              router.push(`/quotes/${q.id}`);
+              setError("");
+              try {
+                const q = await createQuote({
+                  customerId: customerId || undefined,
+                  customerName: customerName || undefined,
+                  customerPhone: customerPhone || undefined,
+                  customerType: !customerId ? customerField.type : undefined,
+                  items: lines.filter((l) => l.productId && l.quantity).map((l) => ({ productId: l.productId, quantity: parseInt(l.quantity), unitPrice: parseFloat(l.unitPrice) || 0 })),
+                  discountPct: discountPct ? parseFloat(discountPct) : undefined,
+                  discountAmt: discountAmt ? parseFloat(discountAmt) : undefined,
+                  vatEnabled,
+                  vatRate: vatEnabled ? parseFloat(vatRate) : undefined,
+                  isTemplate: asTemplate,
+                  templateName: asTemplate ? templateName : undefined,
+                });
+                router.push(`/quotes/${q.id}`);
+              } catch (e: any) {
+                setError(friendlyErrorMessage(e, "تعذر حفظ عرض السعر"));
+              }
             })}
             className="bg-gold text-white rounded-lg px-5 py-2 text-sm"
           >
@@ -97,6 +104,7 @@ export default function QuoteForm({ products, customers: initialCustomers, templ
           </button>
           <button type="button" onClick={() => setOpen(false)} className="text-neutral-500 text-sm">إلغاء</button>
         </div>
+        {error && <p className="text-red-600 text-sm bg-red-50 rounded-lg p-2">{error}</p>}
       </div>
     </div>
   );
