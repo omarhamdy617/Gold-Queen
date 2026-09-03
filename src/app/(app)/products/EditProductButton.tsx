@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { updateProduct } from "@/actions/products";
 import { useRouter } from "next/navigation";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -38,7 +39,7 @@ export default function EditProductButton({ product, categories }: { product: an
     if (!(wholesale >= 0) || !(retail >= 0)) return setError("أسعار غير صحيحة");
     start(async () => {
       try {
-        await updateProduct(product.id, {
+        const result = await updateProduct(product.id, {
           name: form.name.trim(),
           categoryId: form.categoryId || undefined,
           requiresSerial: form.requiresSerial,
@@ -49,6 +50,7 @@ export default function EditProductButton({ product, categories }: { product: an
           active: form.active,
           imageUrl: imagePreview || undefined,
         });
+        if (isActionError(result)) { setError(result.error); return; }
         setOpen(false);
         router.refresh();
       } catch (e: any) {
