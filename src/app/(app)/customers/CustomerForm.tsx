@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { createCustomer } from "@/actions/customers";
 import { useRouter } from "next/navigation";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function CustomerForm() {
   const [open, setOpen] = useState(false);
@@ -24,7 +25,7 @@ export default function CustomerForm() {
             setForm({ name: "", phone: "", type: "RETAIL", creditLimit: "" });
             router.refresh();
           } catch (e: any) {
-            setError(e?.message || "حصل خطأ أثناء إضافة العميل");
+            setError(friendlyErrorMessage(e, "تعذر إضافة العميل"));
           }
         });
       }}
