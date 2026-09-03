@@ -3,6 +3,7 @@ import { useMemo, useState, useTransition } from "react";
 import { createSalesInvoice } from "@/actions/sales";
 import { useRouter } from "next/navigation";
 import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 type Line = { productId: string; quantity: string; unitPrice: string; serials: string };
 
@@ -75,7 +76,7 @@ export default function NewInvoiceForm({ products, locations, customers: initial
         });
         router.push(`/sales/${inv.id}`);
       } catch (e: any) {
-        setError(e.message || "حدث خطأ");
+        setError(friendlyErrorMessage(e, "تعذر حفظ الفاتورة"));
       }
     });
   }
