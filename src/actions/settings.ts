@@ -3,6 +3,7 @@ import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
 import { requirePermission, hashPassword, logAudit } from "@/lib/auth";
 import { DEFAULT_ROLE_PERMISSIONS } from "@/lib/permissions";
+import { toActionError } from "@/lib/actionError";
 import { revalidatePath } from "next/cache";
 
 export async function listRoles() {
@@ -43,6 +44,14 @@ export async function updateUserPassword(userId: string, password: string) {
 }
 
 export async function updateUser(userId: string, data: { username?: string; fullName?: string; roleId?: string }) {
+  try {
+    return await updateUserInner(userId, data);
+  } catch (e) {
+    return toActionError(e, "تعذر حفظ بيانات المستخدم");
+  }
+}
+
+async function updateUserInner(userId: string, data: Parameters<typeof updateUser>[1]) {
   await requirePermission("users.manage");
   if (data.username !== undefined && !data.username.trim()) throw new Error("اسم المستخدم لازم يكون موجود");
   if (data.fullName !== undefined && !data.fullName.trim()) throw new Error("الاسم بالكامل لازم يكون موجود");
@@ -118,6 +127,14 @@ export async function createCustomRole(name: string) {
 }
 
 export async function renameRole(roleId: string, name: string) {
+  try {
+    return await renameRoleInner(roleId, name);
+  } catch (e) {
+    return toActionError(e, "تعذر حفظ اسم الدور");
+  }
+}
+
+async function renameRoleInner(roleId: string, name: string) {
   await requirePermission("users.manage");
   if (!name.trim()) throw new Error("لازم تكتب اسم للمسمى الوظيفي");
   const [role] = await db.update(schema.roles).set({ name: name.trim() }).where(eq(schema.roles.id, roleId)).returning();
