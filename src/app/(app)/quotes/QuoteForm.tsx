@@ -2,16 +2,17 @@
 import { useState, useTransition } from "react";
 import { createQuote } from "@/actions/sales";
 import { useRouter } from "next/navigation";
-import CustomerPicker from "@/components/CustomerPicker";
+import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
 
 export default function QuoteForm({ products, customers: initialCustomers, templates }: any) {
-  const [customers, setCustomers] = useState(initialCustomers);
+  const [customers] = useState<SimpleCustomer[]>(initialCustomers);
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
-  const [customerId, setCustomerId] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerField, setCustomerField] = useState<SimpleCustomerValue>({ customerId: "", name: "", phone: "", type: "RETAIL" });
+  const customerId = customerField.customerId;
+  const customerName = customerField.name;
+  const customerPhone = customerField.phone;
   const [lines, setLines] = useState([{ productId: "", quantity: "1", unitPrice: "" }]);
   const [discountPct, setDiscountPct] = useState("");
   const [discountAmt, setDiscountAmt] = useState("");
@@ -36,23 +37,7 @@ export default function QuoteForm({ products, customers: initialCustomers, templ
 
   return (
     <div className="bg-white rounded-xl shadow p-4 space-y-3">
-      <div className="grid sm:grid-cols-3 gap-3">
-        <CustomerPicker
-          customers={customers}
-          value={customerId}
-          onChange={(id, c) => {
-            setCustomerId(id);
-            if (c) {
-              setCustomerName(c.name);
-              setCustomerPhone(c.phone || "");
-            }
-          }}
-          onCreated={(c) => setCustomers((prev: any) => [...prev, c])}
-          label=""
-        />
-        <input placeholder="اسم العميل" value={customerName} onChange={(e) => setCustomerName(e.target.value)} disabled={!!customerId} className="border rounded px-3 py-2 text-sm disabled:bg-background" />
-        <input placeholder="رقم الهاتف (لواتساب)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} disabled={!!customerId} className="border rounded px-3 py-2 text-sm disabled:bg-background" />
-      </div>
+      <SimpleCustomerField customers={customers} value={customerField} onChange={setCustomerField} />
 
       {lines.map((line, idx) => (
         <div key={idx} className="grid sm:grid-cols-4 gap-2">
@@ -95,6 +80,7 @@ export default function QuoteForm({ products, customers: initialCustomers, templ
                 customerId: customerId || undefined,
                 customerName: customerName || undefined,
                 customerPhone: customerPhone || undefined,
+                customerType: !customerId ? customerField.type : undefined,
                 items: lines.filter((l) => l.productId && l.quantity).map((l) => ({ productId: l.productId, quantity: parseInt(l.quantity), unitPrice: parseFloat(l.unitPrice) || 0 })),
                 discountPct: discountPct ? parseFloat(discountPct) : undefined,
                 discountAmt: discountAmt ? parseFloat(discountAmt) : undefined,
