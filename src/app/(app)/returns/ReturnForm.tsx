@@ -4,6 +4,7 @@ import { createReturnRequest } from "@/actions/returns";
 import { useRouter } from "next/navigation";
 import CustomerPicker from "@/components/CustomerPicker";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -46,7 +47,7 @@ export default function ReturnForm({ products, customers: initialCustomers, supp
     if (items.length === 0) return setError("لازم تضيف صنف واحد على الأقل");
     start(async () => {
       try {
-        await createReturnRequest({
+        const result = await createReturnRequest({
           kind,
           customerId: kind === "SALE_RETURN" ? (customerId || undefined) : undefined,
           supplierId: kind === "PURCHASE_RETURN" ? (supplierId || undefined) : undefined,
@@ -55,6 +56,7 @@ export default function ReturnForm({ products, customers: initialCustomers, supp
           imageUrl,
           items,
         });
+        if (isActionError(result)) { setError(result.error); return; }
         setOpen(false); router.refresh();
       } catch (e: any) {
         setError(friendlyErrorMessage(e, "تعذر حفظ المرتجع"));
