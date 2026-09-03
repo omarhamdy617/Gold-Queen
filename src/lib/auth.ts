@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { db, schema } from "@/db";
 import { eq, and } from "drizzle-orm";
+import { randomBytes } from "crypto";
 
 const COOKIE_NAME = "gc_session";
 const secretKey = () => new TextEncoder().encode(process.env.NEXTAUTH_SECRET || "dev_secret_change_me");
@@ -113,6 +114,11 @@ export async function logAudit(params: {
 export function genCode(prefix: string) {
   const d = new Date();
   const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-  const rand = Math.floor(1000 + Math.random() * 9000);
+  // 8 hex chars from crypto-strength randomness (~4.29 billion combinations) makes a
+  // same-day collision on the unique `code` column effectively impossible, unlike the
+  // old 4-digit Math.random() suffix (only 9000 values/day) which could collide and
+  // crash the save with a raw, unhandled database error (shown to the user as the
+  // generic "Minified React error #441").
+  const rand = randomBytes(4).toString("hex").toUpperCase();
   return `${prefix}-${stamp}-${rand}`;
 }
