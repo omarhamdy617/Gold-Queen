@@ -4,6 +4,7 @@ import { createSalesInvoice } from "@/actions/sales";
 import { useRouter } from "next/navigation";
 import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 type Line = { productId: string; quantity: string; unitPrice: string; serials: string };
 
@@ -74,6 +75,7 @@ export default function NewInvoiceForm({ products, locations, customers: initial
           source: source as any,
           notes: notes.trim() || undefined,
         });
+        if (isActionError(inv)) { setError(inv.error); return; }
         router.push(`/sales/${inv.id}`);
       } catch (e: any) {
         setError(friendlyErrorMessage(e, "تعذر حفظ الفاتورة"));
