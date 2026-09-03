@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
 import { EGYPT_GOVERNORATES } from "@/lib/governorates";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 export default function OrderForm({ products, customers: initialCustomers, locations }: any) {
   const [customers] = useState<SimpleCustomer[]>(initialCustomers);
@@ -37,7 +38,7 @@ export default function OrderForm({ products, customers: initialCustomers, locat
     if (items.length === 0) return setError("لازم تضيف صنف واحد على الأقل بكمية صحيحة");
     start(async () => {
       try {
-        await createOrder({
+        const result = await createOrder({
           customerId: customerId || undefined,
           customerName: customerName.trim(),
           customerPhone: customerPhone.trim(),
@@ -50,6 +51,7 @@ export default function OrderForm({ products, customers: initialCustomers, locat
           prepaid,
           items,
         });
+        if (isActionError(result)) { setError(result.error); return; }
         setOpen(false);
         router.refresh();
       } catch (e: any) {
