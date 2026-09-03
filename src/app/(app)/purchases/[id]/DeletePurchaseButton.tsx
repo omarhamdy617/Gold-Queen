@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deletePurchase } from "@/actions/purchases";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 export default function DeletePurchaseButton({ id }: { id: string }) {
   const [pending, start] = useTransition();
@@ -14,7 +15,8 @@ export default function DeletePurchaseButton({ id }: { id: string }) {
     setError("");
     start(async () => {
       try {
-        await deletePurchase(id);
+        const result = await deletePurchase(id);
+        if (isActionError(result)) { setError(result.error); return; }
         router.push("/purchases");
         router.refresh();
       } catch (e: any) {
