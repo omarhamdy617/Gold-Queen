@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { createReturnRequest } from "@/actions/returns";
 import { useRouter } from "next/navigation";
 import CustomerPicker from "@/components/CustomerPicker";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -56,7 +57,7 @@ export default function ReturnForm({ products, customers: initialCustomers, supp
         });
         setOpen(false); router.refresh();
       } catch (e: any) {
-        setError(e?.message || "حصل خطأ");
+        setError(friendlyErrorMessage(e, "تعذر حفظ المرتجع"));
       }
     });
   }
