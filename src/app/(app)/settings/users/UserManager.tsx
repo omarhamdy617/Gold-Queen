@@ -4,6 +4,7 @@ import { createUser, toggleUserActive, deleteUser, updateUserPassword, createCus
 import { useRouter } from "next/navigation";
 import PermissionEditor from "./PermissionEditor";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 export default function UserManager({ users, roles }: { users: any[]; roles: any[] }) {
   const [pending, start] = useTransition();
@@ -116,7 +117,8 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
                             start(async () => {
                               setInfoError("");
                               try {
-                                await updateUser(u.id, { username: infoForm.username, fullName: infoForm.fullName, roleId: infoForm.roleId });
+                                const result = await updateUser(u.id, { username: infoForm.username, fullName: infoForm.fullName, roleId: infoForm.roleId });
+                                if (isActionError(result)) { setInfoError(result.error); return; }
                                 setInfoUser(null);
                                 router.refresh();
                               } catch (e: any) {
@@ -172,7 +174,8 @@ function RoleRow({ role, onSaved }: { role: any; onSaved: () => void }) {
           start(async () => {
             setError("");
             try {
-              await renameRole(role.id, name);
+              const result = await renameRole(role.id, name);
+              if (isActionError(result)) { setError(result.error); return; }
               onSaved();
             } catch (e: any) {
               setError(friendlyErrorMessage(e, "تعذر حفظ اسم الدور"));
