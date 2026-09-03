@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { updateProduct } from "@/actions/products";
 import { useRouter } from "next/navigation";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -51,7 +52,7 @@ export default function EditProductButton({ product, categories }: { product: an
         setOpen(false);
         router.refresh();
       } catch (e: any) {
-        setError(e?.message || "حصل خطأ أثناء حفظ التعديل");
+        setError(friendlyErrorMessage(e, "تعذر حفظ التعديل"));
       }
     });
   }
