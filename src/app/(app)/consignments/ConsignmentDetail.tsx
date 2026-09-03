@@ -3,6 +3,7 @@ import { useEffect, useState, useTransition } from "react";
 import { getConsignmentItems, returnConsignmentItems } from "@/actions/consignments";
 import { useRouter } from "next/navigation";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 type Item = { id: string; productId: string; quantity: number; unitPrice: string; returnedQty: number; productName: string };
 
@@ -30,7 +31,8 @@ export default function ConsignmentDetail({ consignmentId, locations }: { consig
     if (!locationId) return setError("اختار المكان اللي هترجع له البضاعة");
     start(async () => {
       try {
-        await returnConsignmentItems({ consignmentId, locationId, items: toReturn });
+        const result = await returnConsignmentItems({ consignmentId, locationId, items: toReturn });
+        if (isActionError(result)) { setError(result.error); return; }
         setQty({});
         const fresh = await getConsignmentItems(consignmentId);
         setItems(fresh as any);
