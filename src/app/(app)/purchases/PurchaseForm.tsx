@@ -4,6 +4,7 @@ import { createPurchase, createSupplier } from "@/actions/purchases";
 import { useRouter } from "next/navigation";
 import ProductSearchSelect from "@/components/ProductSearchSelect";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 type Line = { productId: string; quantity: string; unitCost: string; serials: string };
 
@@ -52,7 +53,7 @@ export default function PurchaseForm({ suppliers, products, locations, paymentMe
 
     start(async () => {
       try {
-        await createPurchase({
+        const result = await createPurchase({
           supplierId,
           locationId,
           items,
@@ -60,6 +61,7 @@ export default function PurchaseForm({ suppliers, products, locations, paymentMe
           paidAmount: paid,
           paymentMethodId: paid > 0 ? paymentMethodId : undefined,
         });
+        if (isActionError(result)) { setError(result.error); return; }
         setOpen(false);
         setLines([{ productId: "", quantity: "", unitCost: "", serials: "" }]);
         router.refresh();
