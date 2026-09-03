@@ -2,6 +2,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { getConsignmentItems, returnConsignmentItems } from "@/actions/consignments";
 import { useRouter } from "next/navigation";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 type Item = { id: string; productId: string; quantity: number; unitPrice: string; returnedQty: number; productName: string };
 
@@ -35,7 +36,7 @@ export default function ConsignmentDetail({ consignmentId, locations }: { consig
         setItems(fresh as any);
         router.refresh();
       } catch (e: any) {
-        setError(e?.message || "حصل خطأ");
+        setError(friendlyErrorMessage(e, "تعذر تسجيل إرجاع البضاعة"));
       }
     });
   }
