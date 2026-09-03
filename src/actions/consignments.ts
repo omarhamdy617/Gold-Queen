@@ -3,6 +3,7 @@ import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit } from "@/lib/auth";
 import { adjustStock, updateConsignmentBalance, postCashByPaymentMethod, stockShortageMessage } from "@/lib/ops";
+import { toActionError } from "@/lib/actionError";
 import { revalidatePath } from "next/cache";
 
 export async function listEmployees() {
@@ -63,6 +64,14 @@ export async function giveConsignment(input: {
 }
 
 export async function settleConsignment(consignmentId: string, amount: number, paymentMethodId: string) {
+  try {
+    return await settleConsignmentInner(consignmentId, amount, paymentMethodId);
+  } catch (e) {
+    return toActionError(e, "تعذر تسجيل التسوية");
+  }
+}
+
+async function settleConsignmentInner(consignmentId: string, amount: number, paymentMethodId: string) {
   await requirePermission("consignments.manage");
   const session = await requireSession();
   await db.transaction(async (tx) => {
@@ -102,6 +111,14 @@ export async function returnConsignmentItems(input: {
   locationId: string;
   items: { itemId: string; quantity: number }[];
 }) {
+  try {
+    return await returnConsignmentItemsInner(input);
+  } catch (e) {
+    return toActionError(e, "تعذر تسجيل إرجاع البضاعة");
+  }
+}
+
+async function returnConsignmentItemsInner(input: Parameters<typeof returnConsignmentItems>[0]) {
   await requirePermission("consignments.manage");
   const session = await requireSession();
 
