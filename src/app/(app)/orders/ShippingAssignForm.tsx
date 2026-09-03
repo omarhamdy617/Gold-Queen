@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { assignOrderShipping } from "@/actions/orders";
 import { useRouter } from "next/navigation";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function ShippingAssignForm({ orderId, couriers, shippingCompanies }: { orderId: string; couriers: any[]; shippingCompanies: any[] }) {
   const [open, setOpen] = useState(false);
@@ -28,7 +29,7 @@ export default function ShippingAssignForm({ orderId, couriers, shippingCompanie
         setOpen(false);
         router.refresh();
       } catch (e: any) {
-        setError(e?.message || "حصل خطأ");
+        setError(friendlyErrorMessage(e, "تعذر تحديد الشحن"));
       }
     });
   }
