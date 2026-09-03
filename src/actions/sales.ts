@@ -239,8 +239,10 @@ export async function deleteSalesInvoice(id: string) {
 
 type QuoteInput = {
   customerId?: string;
+  // لو مفيش customerId جاهز، هيتسجل عميل جديد تلقائي بالاسم/الرقم دول (أو يترَبَط بعميل موجود بنفس الرقم) - زي فاتورة البيع
   customerName?: string;
   customerPhone?: string;
+  customerType?: "RETAIL" | "TRADER";
   items: { productId: string; quantity: number; unitPrice: number }[];
   discountPct?: number;
   discountAmt?: number;
@@ -259,28 +261,59 @@ export async function createQuote(input: QuoteInput) {
   const vatAmount = input.vatEnabled && input.vatRate ? afterDiscount * (input.vatRate / 100) : 0;
   const total = afterDiscount + vatAmount;
 
-  const code = genCode("QUO");
-  const [quote] = await db
-    .insert(schema.quotes)
-    .values({
-      code,
-      customerId: input.customerId,
-      customerName: input.customerName,
-      customerPhone: input.customerPhone,
-      subtotal: subtotal.toFixed(2),
-      discountPct: input.discountPct?.toFixed(2),
-      discountAmt: input.discountAmt?.toFixed(2),
-      vatEnabled: input.vatEnabled,
-      vatRate: input.vatRate?.toFixed(2),
-      total: total.toFixed(2),
-      isTemplate: input.isTemplate,
-      templateName: input.templateName,
-    })
-    .returning();
+  const quote = await db.transaction(async (tx) => {
+    // ربط/إنشاء العميل تلقائيًا بالهاتف - بنفس أسلوب فاتورة البيع والأوردر
+    let customerId = input.customerId;
+    if (!customerId && (input.customerName?.trim() || input.customerPhone?.trim())) {
+      const phone = input.customerPhone?.trim();
+      if (phone) {
+        const [existing] = await tx.select().from(schema.customers).where(eq(schema.customers.phone, phone)).for("update");
+        if (existing) {
+          customerId = existing.id;
+          if (input.customerName?.trim() && input.customerName.trim() !== existing.name) {
+            await tx.update(schema.customers).set({ name: input.customerName.trim() }).where(eq(schema.customers.id, existing.id));
+          }
+        } else {
+          const [created] = await tx
+            .insert(schema.customers)
+            .values({ name: input.customerName?.trim() || "عميل بدون اسم", phone, type: input.customerType || "RETAIL" })
+            .returning();
+          customerId = created.id;
+        }
+      } else if (input.customerName?.trim()) {
+        const [created] = await tx
+          .insert(schema.customers)
+          .values({ name: input.customerName.trim(), type: input.customerType || "RETAIL" })
+          .returning();
+        customerId = created.id;
+      }
+    }
 
-  for (const item of input.items) {
-    await db.insert(schema.quoteItems).values({ quoteId: quote.id, productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice.toFixed(2) });
-  }
+    const code = genCode("QUO");
+    const [q] = await tx
+      .insert(schema.quotes)
+      .values({
+        code,
+        customerId,
+        customerName: input.customerName,
+        customerPhone: input.customerPhone,
+        subtotal: subtotal.toFixed(2),
+        discountPct: input.discountPct?.toFixed(2),
+        discountAmt: input.discountAmt?.toFixed(2),
+        vatEnabled: input.vatEnabled,
+        vatRate: input.vatRate?.toFixed(2),
+        total: total.toFixed(2),
+        isTemplate: input.isTemplate,
+        templateName: input.templateName,
+      })
+      .returning();
+
+    for (const item of input.items) {
+      await tx.insert(schema.quoteItems).values({ quoteId: q.id, productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice.toFixed(2) });
+    }
+    return q;
+  });
+
   revalidatePath("/quotes");
   return quote;
 }
