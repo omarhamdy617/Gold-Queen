@@ -3,6 +3,7 @@ import { db, schema } from "@/db";
 import { eq, and, sql, ilike, or, gte, lte } from "drizzle-orm";
 import { requirePermission } from "@/lib/auth";
 import { logAudit } from "@/lib/auth";
+import { toActionError } from "@/lib/actionError";
 import { revalidatePath } from "next/cache";
 
 export async function listCategories() {
@@ -76,6 +77,14 @@ export async function updateProduct(id: string, data: Partial<{
   name: string; categoryId: string; requiresSerial: boolean; warrantyMonths: number;
   unit: string; wholesalePrice: number; retailPrice: number; reorderPoint: number; active: boolean; imageUrl: string;
 }>) {
+  try {
+    return await updateProductInner(id, data);
+  } catch (e) {
+    return toActionError(e, "تعذر حفظ التعديل");
+  }
+}
+
+async function updateProductInner(id: string, data: Parameters<typeof updateProduct>[1]) {
   await requirePermission("products.manage");
   const before = await db.select().from(schema.products).where(eq(schema.products.id, id)).then(r => r[0]);
   const payload: any = { ...data, updatedAt: new Date() };
