@@ -3,6 +3,7 @@ import { db, schema } from "@/db";
 import { eq, and } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit, genCode, can } from "@/lib/auth";
 import { adjustStock } from "@/lib/ops";
+import { toActionError } from "@/lib/actionError";
 import { revalidatePath } from "next/cache";
 
 // -------------------- خريطة الكميات المتاحة في مكان معيّن (للاستخدام في اختيار المنتج) --------------------
@@ -35,6 +36,14 @@ export async function createTransfer(input: {
   items: { productId: string; quantity: number }[];
   note?: string;
 }) {
+  try {
+    return await createTransferInner(input);
+  } catch (e) {
+    return toActionError(e, "تعذر تنفيذ التحويل");
+  }
+}
+
+async function createTransferInner(input: Parameters<typeof createTransfer>[0]) {
   await requirePermission("transfers.create");
   const session = await requireSession();
   if (!input.fromLocationId || !input.toLocationId) throw new Error("لازم تحدد المكان المصدر والمكان الوجهة");
@@ -86,6 +95,14 @@ export async function updateTransfer(
   id: string,
   input: { fromLocationId: string; toLocationId: string; items: { productId: string; quantity: number }[]; note?: string }
 ) {
+  try {
+    return await updateTransferInner(id, input);
+  } catch (e) {
+    return toActionError(e, "تعذر حفظ التعديل");
+  }
+}
+
+async function updateTransferInner(id: string, input: Parameters<typeof updateTransfer>[1]) {
   await requirePermission("transfers.edit");
   if (!input.fromLocationId || !input.toLocationId) throw new Error("لازم تحدد المكان المصدر والمكان الوجهة");
   if (input.fromLocationId === input.toLocationId) throw new Error("لازم يكون المصدر والوجهة مختلفين");
