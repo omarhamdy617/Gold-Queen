@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { settleConsignment } from "@/actions/consignments";
 import { useRouter } from "next/navigation";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { isActionError } from "@/lib/actionError";
 
 export default function SettleForm({ consignmentId, paymentMethods }: { consignmentId: string; paymentMethods: any[] }) {
   const [amount, setAmount] = useState("");
@@ -20,7 +21,8 @@ export default function SettleForm({ consignmentId, paymentMethods }: { consignm
         if (!paymentMethodId) return setError("اختر طريقة التحصيل");
         start(async () => {
           try {
-            await settleConsignment(consignmentId, amt, paymentMethodId);
+            const result = await settleConsignment(consignmentId, amt, paymentMethodId);
+            if (isActionError(result)) { setError(result.error); return; }
             setAmount("");
             router.refresh();
           } catch (e: any) {
