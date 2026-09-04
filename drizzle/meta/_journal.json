@@ -8,6 +8,27 @@
       "when": 1788017599770,
       "tag": "0000_cheerful_paibok",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788029793244,
+      "tag": "0001_wide_ink",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788149592079,
+      "tag": "0002_lumpy_betty_brant",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788483982703,
+      "tag": "0003_vengeful_zombie",
+      "breakpoints": true
     }
   ]
 }
