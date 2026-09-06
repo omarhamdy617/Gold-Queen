@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { customerName, customerPhone, items, shippingAddress, governorate } = body;
+  const { customerName, customerPhone, items, shippingAddress, governorate, shippingFee, discount } = body;
   if (!Array.isArray(items) || items.length === 0) {
     return NextResponse.json({ error: "لا توجد أصناف في الأوردر" }, { status: 400 });
   }
@@ -23,10 +23,14 @@ export async function POST(req: NextRequest) {
     if (item.quantity !== undefined && (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0)) {
       return NextResponse.json({ error: `كمية غير صحيحة لصنف: ${item.productId || item.barcode || "?"}` }, { status: 400 });
     }
+    if (item.unitPrice !== undefined && (!Number.isFinite(Number(item.unitPrice)) || Number(item.unitPrice) < 0)) {
+      return NextResponse.json({ error: `سعر غير صحيح لصنف: ${item.productId || item.barcode || "?"}` }, { status: 400 });
+    }
   }
 
-  // نحاول نطابق كل صنف بالباركود أو بالـ id
-  const resolvedItems: { productId: string; quantity: number }[] = [];
+  // نحاول نطابق كل صنف بالباركود أو بالـ id - وسعر الوحدة (لو الموقع بعته) بيتسجل زي ما هو،
+  // غير كده بيتسجل صفر لحد ما حد يراجعه ويأكد الأوردر تليفونيًا
+  const resolvedItems: { productId: string; quantity: number; unitPrice: number }[] = [];
   for (const item of items) {
     let product = null;
     if (item.productId) {
@@ -34,11 +38,15 @@ export async function POST(req: NextRequest) {
     } else if (item.barcode) {
       [product] = await db.select().from(schema.products).where(eq(schema.products.barcode, item.barcode));
     }
-    if (product) resolvedItems.push({ productId: product.id, quantity: item.quantity || 1 });
+    if (product) resolvedItems.push({ productId: product.id, quantity: item.quantity || 1, unitPrice: Number(item.unitPrice) || 0 });
   }
   if (resolvedItems.length === 0) {
     return NextResponse.json({ error: "لم يتم التعرف على أي صنف" }, { status: 400 });
   }
+  const shippingFeeNum = Number.isFinite(Number(shippingFee)) ? Math.max(Number(shippingFee), 0) : 0;
+  const discountNum = Number.isFinite(Number(discount)) ? Math.max(Number(discount), 0) : 0;
+  const subtotal = resolvedItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+  const total = Math.max(subtotal - discountNum + shippingFeeNum, 0);
 
   const code = "WEB-" + Date.now().toString(36).toUpperCase();
   // نحتاج مستخدم "نظام" لتسجيل الأوردر - أول أدمن نشط
@@ -75,14 +83,19 @@ export async function POST(req: NextRequest) {
         address: shippingAddress || undefined,
         governorate: governorate || undefined,
         source: "WEBSITE",
-        shippingMethod: "OTHER",
-        status: "PREPARING",
+        // الأوردر بيدخل "في الانتظار" زي أي أوردر تاني - لازم يتأكد تليفونيًا الأول قبل ما يتحدد
+        // مكانه ويتحجز مخزونه (نفس خط سير الأوردرات اليدوية بالظبط)
+        status: "PENDING",
+        subtotal: subtotal.toFixed(2),
+        discount: discountNum.toFixed(2),
+        shippingFee: shippingFeeNum.toFixed(2),
+        total: total.toFixed(2),
         createdById: (systemUser as any).users.id,
       })
       .returning();
 
     for (const item of resolvedItems) {
-      await tx.insert(schema.orderItems).values({ orderId: order.id, productId: item.productId, quantity: item.quantity });
+      await tx.insert(schema.orderItems).values({ orderId: order.id, productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice.toFixed(2) });
     }
 
     await tx.insert(schema.auditLogs).values({ action: "CREATE", entityType: "Order", entityId: order.id, after: { source: "WEBSITE", code } });

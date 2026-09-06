@@ -38,5 +38,18 @@ export async function getAlertsSummary(): Promise<AlertItem[]> {
   const lowStockCount = products.filter((p) => (stocksByProduct.get(p.id) || 0) <= p.reorderPoint).length;
   if (lowStockCount > 0) alerts.push({ label: `${lowStockCount} منتج وصل لحد إعادة الطلب`, count: lowStockCount, href: "/products" });
 
+  // أوردرات واقفة من غير حركة - قبل كده الأوردر ممكن يفضل "في الانتظار" أو "قيد التجهيز" لأيام
+  // من غير ما حد ياخد باله، لأن مفيش تنبيه بيربط على المدة اللي الأوردر قاعدها في نفس الحالة
+  const staleOrders = await db
+    .select({ id: schema.orders.id, status: schema.orders.status, createdAt: schema.orders.createdAt, updatedAt: schema.orders.updatedAt })
+    .from(schema.orders)
+    .where(and(sql`${schema.orders.status} IN ('PENDING','CONFIRMED','PREPARING')`));
+  const dayMs = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const stalePending = staleOrders.filter((o) => o.status === "PENDING" && now - new Date(o.createdAt).getTime() > dayMs).length;
+  const staleInProgress = staleOrders.filter((o) => o.status !== "PENDING" && now - new Date(o.updatedAt).getTime() > 2 * dayMs).length;
+  if (stalePending > 0) alerts.push({ label: `${stalePending} أوردر لسه في الانتظار من غير تأكيد من أكتر من يوم`, count: stalePending, href: "/orders?status=PENDING" });
+  if (staleInProgress > 0) alerts.push({ label: `${staleInProgress} أوردر واقف من غير شحن من أكتر من يومين`, count: staleInProgress, href: "/orders?status=PREPARING" });
+
   return alerts;
 }

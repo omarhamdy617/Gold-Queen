@@ -52,7 +52,8 @@ export const customerTypeEnum = pgEnum("customer_type", ["RETAIL", "TRADER"]);
 export const invoicePaymentStatusEnum = pgEnum("invoice_payment_status", ["PAID", "UNPAID", "PARTIAL"]);
 export const orderSourceEnum = pgEnum("order_source", ["WEBSITE", "PHONE", "WHATSAPP", "FACEBOOK", "OTHER"]);
 export const shippingMethodEnum = pgEnum("shipping_method", ["INTERNAL_COURIER", "EXTERNAL_COMPANY", "OTHER"]);
-export const orderStatusEnum = pgEnum("order_status", ["PREPARING", "SHIPPED", "DELIVERED", "RETURNED"]);
+export const orderStatusEnum = pgEnum("order_status", ["PENDING", "CONFIRMED", "PREPARING", "SHIPPED", "DELIVERED", "RETURNED", "CANCELLED"]);
+export const orderAttemptResultEnum = pgEnum("order_attempt_result", ["NO_ANSWER", "WRONG_NUMBER", "POSTPONED", "OTHER"]);
 export const returnStatusEnum = pgEnum("return_status", ["PENDING", "APPROVED", "REJECTED"]);
 export const returnKindEnum = pgEnum("return_kind", ["SALE_RETURN", "PURCHASE_RETURN"]);
 export const collectionStatusEnum = pgEnum("collection_status", ["PENDING", "COLLECTED"]);
@@ -522,7 +523,7 @@ export const orders = pgTable("orders", {
   shippingCompanyName: varchar("shipping_company_name", { length: 150 }),
   courierId: text("courier_id").references(() => couriers.id),
   courierName: varchar("courier_name", { length: 150 }),
-  status: orderStatusEnum("status").notNull().default("PREPARING"),
+  status: orderStatusEnum("status").notNull().default("PENDING"),
   prepaid: boolean("prepaid").notNull().default(false),
   locationId: text("location_id").references(() => locations.id),
   collectionStatus: collectionStatusEnum("collection_status"),
@@ -530,6 +531,25 @@ export const orders = pgTable("orders", {
   returnReason: text("return_reason"),
   deliveredById: text("delivered_by_id").references(() => users.id),
   deliveredAt: timestamp("delivered_at"),
+  // سعر الأوردر - بيتحدد يدويًا وقت التسجيل (مش بياخد سعر المنتج تلقائيًا) عشان اللي بيسجل الأوردر
+  // هو اللي بيكتب السعر المتفق عليه فعليًا مع العميل. subtotal = مجموع (سعر الصنف × الكمية) لكل الأصناف،
+  // total = subtotal - discount + shippingFee وده "المبلغ المتوقع تحصيله" من العميل عند التسليم.
+  subtotal: money("subtotal").notNull().default("0"),
+  discount: money("discount").notNull().default("0"),
+  shippingFee: money("shipping_fee").notNull().default("0"),
+  total: money("total").notNull().default("0"),
+  // تأكيد الأوردر تليفونيًا - خطوة منفصلة عن التسجيل الأول، قبل ما نحجز أي مخزون أو نحرك شحن
+  confirmedById: text("confirmed_by_id").references(() => users.id),
+  confirmedAt: timestamp("confirmed_at"),
+  // تتبع محاولات الاتصال بالعميل للتأكيد - عشان فريق الكول سنتر يعرف مين محتاج متابعة ومحدش رد عليه
+  confirmationAttempts: integer("confirmation_attempts").notNull().default(0),
+  lastAttemptAt: timestamp("last_attempt_at"),
+  lastAttemptResult: orderAttemptResultEnum("last_attempt_result"),
+  lastAttemptNote: text("last_attempt_note"),
+  // إلغاء الأوردر قبل الشحن - حالة منفصلة عن "مرتجع" (اللي بيحصل بعد ما الأوردر يتشحن/يتسلّم)
+  cancelReason: text("cancel_reason"),
+  cancelledById: text("cancelled_by_id").references(() => users.id),
+  cancelledAt: timestamp("cancelled_at"),
   createdById: text("created_by_id")
     .notNull()
     .references(() => users.id),
@@ -548,6 +568,8 @@ export const orderItems = pgTable("order_items", {
     .notNull()
     .references(() => products.id),
   quantity: integer("quantity").notNull(),
+  // سعر الوحدة وقت تسجيل الأوردر - بيتكتب يدويًا (مش سعر المنتج المسجل تلقائيًا)
+  unitPrice: money("unit_price").notNull().default("0"),
 });
 
 // --------------------------------------------------------------------------

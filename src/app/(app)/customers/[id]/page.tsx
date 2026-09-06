@@ -6,6 +6,7 @@ import CollectionForm from "./CollectionForm";
 import PeriodPicker from "./PeriodPicker";
 import EditCustomerForm from "./EditCustomerForm";
 import { buildCustomerTimeline } from "@/lib/statement";
+import { ORDER_STATUS_LABELS } from "@/lib/orderStatus";
 
 export default async function CustomerDetailPage({
   params,
@@ -52,7 +53,7 @@ export default async function CustomerDetailPage({
               {customer.orders.map((o: any) => (
                 <tr key={o.id} className="border-b last:border-0">
                   <td className="py-2"><a href={`/orders/${o.id}`} className="text-primary underline font-mono text-xs">{o.code}</a></td>
-                  <td>{o.status}</td>
+                  <td>{ORDER_STATUS_LABELS[o.status] || o.status}</td>
                   <td className="text-xs">{dateAr(o.createdAt)}</td>
                 </tr>
               ))}

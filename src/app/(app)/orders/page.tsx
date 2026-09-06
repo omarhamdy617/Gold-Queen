@@ -4,16 +4,32 @@ import { listCustomers } from "@/actions/customers";
 import { listPaymentMethods } from "@/actions/cash";
 import { can } from "@/lib/auth";
 import { dateAr, money } from "@/lib/format";
+import { ORDER_STATUS_LABELS } from "@/lib/orderStatus";
 import OrderForm from "./OrderForm";
 import StatusControl from "./StatusControl";
 import ShippingAssignForm from "./ShippingAssignForm";
 import AssignLocationForm from "./AssignLocationForm";
+import OrderSearchBox from "./OrderSearchBox";
 import Link from "next/link";
 
-export default async function OrdersPage() {
-  const canShip = await can("orders.ship");
+const STAT_ORDER: { key: string; statKey: string }[] = [
+  { key: "ALL", statKey: "total" },
+  { key: "PENDING", statKey: "pending" },
+  { key: "CONFIRMED", statKey: "confirmed" },
+  { key: "PREPARING", statKey: "preparing" },
+  { key: "SHIPPED", statKey: "shipped" },
+  { key: "DELIVERED", statKey: "delivered" },
+  { key: "RETURNED", statKey: "returned" },
+  { key: "CANCELLED", statKey: "cancelled" },
+];
+
+export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; q?: string }> }) {
+  const { status: rawStatus, q } = await searchParams;
+  const status = rawStatus && rawStatus !== "ALL" ? rawStatus : "ALL";
+  const [canShip, canConfirmPerm] = await Promise.all([can("orders.ship"), can("orders.confirm")]);
+  const canConfirm = canShip || canConfirmPerm;
   const [orders, products, customers, couriers, shippingCompanies, locations, stats, paymentMethods] = await Promise.all([
-    listOrders(),
+    listOrders(status, q),
     listProductsWithStock(),
     listCustomers(),
     canShip ? listCouriers() : Promise.resolve([]),
@@ -22,26 +38,39 @@ export default async function OrdersPage() {
     getOrderStats(),
     listPaymentMethods(),
   ]);
+  const canManageStatus = canShip || canConfirm;
+
+  const qsFor = (st: string) => {
+    const params = new URLSearchParams();
+    if (st !== "ALL") params.set("status", st);
+    if (q?.trim()) params.set("q", q.trim());
+    const qs = params.toString();
+    return qs ? `/orders?${qs}` : "/orders";
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">الأوردرات والشحن</h1>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <StatCard label="إجمالي الأوردرات" value={stats.total} />
-        <StatCard label="قيد التجهيز" value={stats.preparing} />
-        <StatCard label="في الشحن" value={stats.shipped} />
-        <StatCard label="تم التسليم" value={stats.delivered} />
-        <StatCard label="مرتجع" value={stats.returned} />
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {STAT_ORDER.map(({ key, statKey }) => (
+          <Link key={key} href={qsFor(key)}>
+            <StatCard label={key === "ALL" ? "إجمالي الأوردرات" : ORDER_STATUS_LABELS[key]} value={(stats as any)[statKey]} active={status === key} />
+          </Link>
+        ))}
         <StatCard label="تحصيل معلّق" value={stats.pendingCollection} highlight />
       </div>
 
       <OrderForm products={products} customers={customers} locations={locations} />
+
+      <OrderSearchBox initialQuery={q || ""} status={status} />
+
       <div className="app-card overflow-x-auto">
-        <table className="w-full text-sm text-right min-w-[1100px]">
+        <table className="w-full text-sm text-right min-w-[1250px]">
           <thead>
             <tr className="border-b text-muted">
-              <th className="p-3">الكود</th><th>العميل</th><th>الهاتف</th><th>العنوان</th><th>المحافظة</th><th>المصدر</th><th>الشحن</th><th>مدفوع مقدمًا</th><th>الحالة</th><th>التاريخ</th>
-              {canShip && <th>المكان / الشحن</th>}
+              <th className="p-3">الكود</th><th>العميل</th><th>الهاتف</th><th>العنوان</th><th>المحافظة</th><th>المصدر</th><th>الشحن</th><th>الإجمالي</th><th>الحالة</th><th>التاريخ</th>
+              {canManageStatus && <th>المكان / الشحن</th>}
             </tr>
           </thead>
           <tbody>
@@ -56,22 +85,29 @@ export default async function OrdersPage() {
                 <td className="text-xs">{o.governorate}</td>
                 <td>{sourceLabel(o.source)}</td>
                 <td className="text-xs">{o.shippingMethod ? `${shipLabel(o.shippingMethod)} - ${o.courierName || o.shippingCompanyName || ""}` : "-"}</td>
-                <td>{o.prepaid ? "نعم" : "لا"}</td>
-                <td><StatusControl orderId={o.id} status={o.status} canEdit={canShip} customerPhone={o.customerPhone} paymentMethods={paymentMethods} /></td>
+                <td className="font-semibold">{money(o.total)}</td>
+                <td><StatusControl orderId={o.id} status={o.status} canEdit={canShip} canConfirm={canConfirm} customerPhone={o.customerPhone} paymentMethods={paymentMethods} confirmationAttempts={o.confirmationAttempts} /></td>
                 <td className="text-xs">{dateAr(o.createdAt)}</td>
-                {canShip && (
+                {canManageStatus && (
                   <td className="p-2">
-                    {!o.locationId ? (
-                      <AssignLocationForm orderId={o.id} locations={locations} />
-                    ) : !o.shippingMethod ? (
-                      <ShippingAssignForm orderId={o.id} couriers={couriers} shippingCompanies={shippingCompanies} />
-                    ) : (
+                    {o.status === "PENDING" ? (
+                      <span className="text-xs text-muted">محتاج تأكيد الأول</span>
+                    ) : o.status === "CONFIRMED" && !o.locationId ? (
+                      canShip ? <AssignLocationForm orderId={o.id} locations={locations} /> : <span className="text-xs text-muted">محتاج تحديد مكان</span>
+                    ) : o.locationId && !o.shippingMethod && !["DELIVERED", "RETURNED", "CANCELLED"].includes(o.status) ? (
+                      canShip ? <ShippingAssignForm orderId={o.id} couriers={couriers} shippingCompanies={shippingCompanies} /> : <span className="text-xs text-muted">محتاج تحديد شحن</span>
+                    ) : o.shippingMethod ? (
                       <span className="text-xs text-muted">تم التحديد</span>
+                    ) : (
+                      <span className="text-xs text-muted">-</span>
                     )}
                   </td>
                 )}
               </tr>
             ))}
+            {orders.length === 0 && (
+              <tr><td colSpan={11} className="p-4 text-center text-muted">لا توجد أوردرات مطابقة</td></tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -79,9 +115,9 @@ export default async function OrdersPage() {
   );
 }
 
-function StatCard({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
+function StatCard({ label, value, highlight, active }: { label: string; value: number; highlight?: boolean; active?: boolean }) {
   return (
-    <div className="app-card p-3">
+    <div className={`app-card p-3 cursor-pointer transition ${active ? "ring-2 ring-primary" : "hover:shadow-md"}`}>
       <div className="text-xs text-muted">{label}</div>
       <div className={`text-xl font-bold ${highlight && value > 0 ? "text-red-600" : ""}`}>{value}</div>
     </div>

@@ -1,12 +1,13 @@
 "use client";
 import { useState, useTransition } from "react";
-import { createOrder } from "@/actions/orders";
+import { createOrder, checkDuplicateOrder } from "@/actions/orders";
 import { useRouter } from "next/navigation";
 import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
 import { EGYPT_GOVERNORATES } from "@/lib/governorates";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { isActionError } from "@/lib/actionError";
 import ProductSearchSelect from "@/components/ProductSearchSelect";
+import { money, dateAr } from "@/lib/format";
 
 export default function OrderForm({ products, customers: initialCustomers, locations }: any) {
   const [customers] = useState<SimpleCustomer[]>(initialCustomers);
@@ -25,18 +26,25 @@ export default function OrderForm({ products, customers: initialCustomers, locat
   const [orderNotes, setOrderNotes] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
   const [prepaid, setPrepaid] = useState(false);
-  const [lines, setLines] = useState([{ productId: "", quantity: "" }]);
+  const [lines, setLines] = useState([{ productId: "", quantity: "", unitPrice: "" }]);
+  const [shippingFee, setShippingFee] = useState("");
+  const [discount, setDiscount] = useState("");
+  const [duplicateWarning, setDuplicateWarning] = useState<{ code: string; createdAt: string } | null>(null);
 
   if (!open) return <button onClick={() => setOpen(true)} className="bg-gold text-white rounded-lg px-4 py-2 text-sm">+ أوردر جديد</button>;
 
-  function submit() {
-    setError("");
-    if (!customerName.trim()) return setError("اسم العميل مطلوب");
-    if (!customerPhone.trim()) return setError("رقم الهاتف مطلوب");
-    if (!address.trim()) return setError("العنوان مطلوب");
-    if (!governorate.trim()) return setError("المحافظة مطلوبة");
-    const items = lines.filter((l) => l.productId && l.quantity && parseInt(l.quantity) > 0).map((l) => ({ productId: l.productId, quantity: parseInt(l.quantity) }));
-    if (items.length === 0) return setError("لازم تضيف صنف واحد على الأقل بكمية صحيحة");
+  const validItems = lines.filter((l) => l.productId && l.quantity && parseInt(l.quantity) > 0);
+  const subtotal = validItems.reduce((s, l) => s + parseInt(l.quantity || "0") * parseFloat(l.unitPrice || "0"), 0);
+  const total = subtotal - parseFloat(discount || "0") + parseFloat(shippingFee || "0");
+
+  function buildItems() {
+    return lines
+      .filter((l) => l.productId && l.quantity && parseInt(l.quantity) > 0)
+      .map((l) => ({ productId: l.productId, quantity: parseInt(l.quantity), unitPrice: parseFloat(l.unitPrice || "0") }));
+  }
+
+  function doSubmit() {
+    const items = buildItems();
     start(async () => {
       try {
         const result = await createOrder({
@@ -51,13 +59,42 @@ export default function OrderForm({ products, customers: initialCustomers, locat
           source: source as any,
           prepaid,
           items,
+          discount: discount ? parseFloat(discount) : 0,
+          shippingFee: shippingFee ? parseFloat(shippingFee) : 0,
         });
         if (isActionError(result)) { setError(result.error); return; }
         setOpen(false);
+        setDuplicateWarning(null);
         router.refresh();
       } catch (e: any) {
         setError(friendlyErrorMessage(e, "تعذر حفظ الأوردر"));
       }
+    });
+  }
+
+  function submit() {
+    setError("");
+    setDuplicateWarning(null);
+    if (!customerName.trim()) return setError("اسم العميل مطلوب");
+    if (!customerPhone.trim()) return setError("رقم الهاتف مطلوب");
+    if (!address.trim()) return setError("العنوان مطلوب");
+    if (!governorate.trim()) return setError("المحافظة مطلوبة");
+    const items = buildItems();
+    if (items.length === 0) return setError("لازم تضيف صنف واحد على الأقل بكمية صحيحة");
+    if (items.some((i) => !Number.isFinite(i.unitPrice) || i.unitPrice < 0)) return setError("لازم تكتب سعر صحيح لكل صنف");
+    if (total < 0) return setError("الإجمالي طلع بالسالب - راجع الخصم/الأسعار");
+
+    start(async () => {
+      try {
+        const dup = await checkDuplicateOrder(customerPhone.trim());
+        if (!isActionError(dup) && dup.found) {
+          setDuplicateWarning({ code: dup.code!, createdAt: String(dup.createdAt) });
+          return;
+        }
+      } catch {
+        // فشل فحص التكرار مش لازم يوقف التسجيل - نكمل عادي
+      }
+      doSubmit();
     });
   }
 
@@ -95,7 +132,7 @@ export default function OrderForm({ products, customers: initialCustomers, locat
           <label className="flex items-center gap-2 text-sm mt-6"><input type="checkbox" checked={prepaid} onChange={(e) => setPrepaid(e.target.checked)} /> العميل دافع مقدمًا</label>
         </div>
         <p className="text-xs text-muted bg-neutral-50 border rounded-lg px-3 py-2">
-          هيتجهز من إيه المحل أو المخزن؟ ده بيتحدد بعد كده من فريق المخازن/الشحن، مش لازم تحدده أنت دلوقتي.
+          هيتجهز من إيه المحل أو المخزن؟ ده بيتحدد بعد كده من فريق المخازن/الشحن بعد ما الأوردر يتأكد تليفونيًا، مش لازم تحدده أنت دلوقتي.
         </p>
         <div>
           <label className="text-xs text-muted">ملاحظات الأوردر</label>
@@ -108,19 +145,49 @@ export default function OrderForm({ products, customers: initialCustomers, locat
       </div>
 
       <div className="space-y-2 border-t pt-3">
-        <div className="text-xs font-semibold text-muted uppercase tracking-wide">الأصناف</div>
+        <div className="text-xs font-semibold text-muted uppercase tracking-wide">الأصناف والسعر</div>
         {lines.map((line, idx) => (
-          <div key={idx} className="grid sm:grid-cols-2 gap-2">
+          <div key={idx} className="grid sm:grid-cols-[1fr_90px_120px_auto] gap-2 items-center">
             <ProductSearchSelect
               products={products}
               value={line.productId}
               onChange={(productId) => { const next = [...lines]; next[idx].productId = productId; setLines(next); }}
             />
             <input type="number" placeholder="الكمية" value={line.quantity} onChange={(e) => { const next = [...lines]; next[idx].quantity = e.target.value; setLines(next); }} className="border rounded px-2 py-1.5 text-sm" />
+            <input type="number" step="0.01" placeholder="سعر الوحدة" value={line.unitPrice} onChange={(e) => { const next = [...lines]; next[idx].unitPrice = e.target.value; setLines(next); }} className="border rounded px-2 py-1.5 text-sm" />
+            {lines.length > 1 && (
+              <button type="button" onClick={() => setLines(lines.filter((_, i) => i !== idx))} className="text-red-600 text-xs">حذف</button>
+            )}
           </div>
         ))}
-        <button type="button" onClick={() => setLines([...lines, { productId: "", quantity: "" }])} className="text-sm text-gold">+ سطر</button>
+        <button type="button" onClick={() => setLines([...lines, { productId: "", quantity: "", unitPrice: "" }])} className="text-sm text-gold">+ سطر</button>
+
+        <div className="grid sm:grid-cols-2 gap-3 pt-2">
+          <div>
+            <label className="text-xs text-muted">مصاريف الشحن</label>
+            <input type="number" step="0.01" value={shippingFee} onChange={(e) => setShippingFee(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1" placeholder="0" />
+          </div>
+          <div>
+            <label className="text-xs text-muted">خصم</label>
+            <input type="number" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1" placeholder="0" />
+          </div>
+        </div>
+
+        <div className="bg-neutral-50 border rounded-lg px-3 py-2 text-sm flex flex-wrap gap-x-6 gap-y-1">
+          <div><span className="text-muted">إجمالي الأصناف: </span><span className="font-semibold">{money(subtotal)}</span></div>
+          <div><span className="text-muted">الإجمالي الكلي (المبلغ المتوقع تحصيله): </span><span className="font-bold text-primary">{money(total)}</span></div>
+        </div>
       </div>
+
+      {duplicateWarning && (
+        <div className="text-amber-800 text-sm bg-amber-50 border border-amber-300 rounded px-3 py-2 space-y-2">
+          <div>⚠️ عندك أوردر تاني بنفس رقم التليفون ده اتسجل قبل كده بكود <b>{duplicateWarning.code}</b> بتاريخ {dateAr(duplicateWarning.createdAt)} - متأكد إن ده مش تكرار؟</div>
+          <div className="flex gap-2">
+            <button disabled={pending} onClick={doSubmit} className="bg-amber-700 text-white text-xs rounded px-3 py-1.5">أيوه، سجّل الأوردر ده كمان</button>
+            <button type="button" onClick={() => setDuplicateWarning(null)} className="text-xs text-muted">إلغاء</button>
+          </div>
+        </div>
+      )}
 
       {error && <div className="text-red-600 text-sm bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>}
 

@@ -65,6 +65,7 @@ export const PERMISSION_GROUPS: { group: string; perms: { key: string; label: st
     group: "الأوردرات والشحن",
     perms: [
       { key: "orders.manage", label: "تسجيل الأوردرات" },
+      { key: "orders.confirm", label: "تأكيد الأوردرات تليفونيًا" },
       { key: "orders.ship", label: "تحديد الشحن (المندوب/شركة الشحن)" },
     ],
   },
@@ -134,6 +135,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "customers.manage",
     "returns.create",
     "orders.manage",
+    "orders.confirm",
     "cash.view",
   ],
 };

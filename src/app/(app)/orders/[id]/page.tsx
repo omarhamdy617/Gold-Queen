@@ -2,9 +2,17 @@ import { getOrder } from "@/actions/orders";
 import { money, dateAr } from "@/lib/format";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { ORDER_STATUS_LABELS as LABELS, ORDER_ATTEMPT_RESULT_LABELS } from "@/lib/orderStatus";
 
-const LABELS: Record<string, string> = { PREPARING: "قيد التجهيز", SHIPPED: "في الشحن", DELIVERED: "تم التسليم", RETURNED: "مرتجع" };
-const COLORS: Record<string, string> = { PREPARING: "badge-gray", SHIPPED: "badge-blue", DELIVERED: "badge-green", RETURNED: "badge-red" };
+const COLORS: Record<string, string> = {
+  PENDING: "badge-gray",
+  CONFIRMED: "badge-blue",
+  PREPARING: "badge-gray",
+  SHIPPED: "badge-blue",
+  DELIVERED: "badge-green",
+  RETURNED: "badge-red",
+  CANCELLED: "badge-red",
+};
 const SOURCE: Record<string, string> = { WEBSITE: "الموقع", PHONE: "تليفون", WHATSAPP: "واتساب", FACEBOOK: "فيسبوك", OTHER: "أخرى" };
 const SHIP: Record<string, string> = { INTERNAL_COURIER: "مندوب داخلي", EXTERNAL_COMPANY: "شركة شحن", OTHER: "أخرى" };
 
@@ -12,7 +20,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const { id } = await params;
   const data = await getOrder(id);
   if (!data) return notFound();
-  const { order, items, locationName, createdByName, assignedByName, deliveredByName } = data;
+  const { order, items, locationName, createdByName, assignedByName, deliveredByName, confirmedByName, cancelledByName } = data;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -44,6 +52,15 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         <h2 className="font-bold text-sm">مين عمل ايه</h2>
         <div className="grid sm:grid-cols-2 gap-3 text-sm">
           <div><span className="text-muted">سجّل الأوردر: </span>{createdByName || "-"}</div>
+          {order.confirmedById && (
+            <div><span className="text-muted">أكّده تليفونيًا: </span>{confirmedByName || "-"} {order.confirmedAt ? `- ${dateAr(order.confirmedAt)}` : ""}</div>
+          )}
+          {order.confirmationAttempts > 0 && (
+            <div className="sm:col-span-2">
+              <span className="text-muted">محاولات الاتصال قبل التأكيد: </span>{order.confirmationAttempts}
+              {order.lastAttemptResult && <span> - آخر نتيجة: {ORDER_ATTEMPT_RESULT_LABELS[order.lastAttemptResult] || order.lastAttemptResult}{order.lastAttemptNote ? ` (${order.lastAttemptNote})` : ""}</span>}
+            </div>
+          )}
           <div><span className="text-muted">حدد الشحن: </span>{assignedByName || "-"}</div>
           {order.shippingMethod && (
             <div><span className="text-muted">طريقة الشحن: </span>{SHIP[order.shippingMethod] || order.shippingMethod} {order.courierName || order.shippingCompanyName ? `- ${order.courierName || order.shippingCompanyName}` : ""}</div>
@@ -57,19 +74,33 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           {order.status === "RETURNED" && (
             <div className="sm:col-span-2"><span className="text-muted">سبب الإرجاع: </span>{order.returnReason || "-"}</div>
           )}
+          {order.status === "CANCELLED" && (
+            <div className="sm:col-span-2"><span className="text-muted">سبب الإلغاء: </span>{order.cancelReason || "-"} {cancelledByName ? `- بواسطة ${cancelledByName}` : ""} {order.cancelledAt ? `- ${dateAr(order.cancelledAt)}` : ""}</div>
+          )}
         </div>
       </div>
 
       <div className="app-card p-4 space-y-3">
-        <h2 className="font-bold text-sm">الأصناف</h2>
+        <h2 className="font-bold text-sm">الأصناف والسعر</h2>
         <table className="w-full text-sm text-right">
-          <thead><tr className="border-b text-muted"><th className="py-2">المنتج</th><th>الكمية</th></tr></thead>
+          <thead><tr className="border-b text-muted"><th className="py-2">المنتج</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead>
           <tbody>
             {items.map((it) => (
-              <tr key={it.id} className="border-b last:border-0"><td className="py-2">{it.productName}</td><td>{it.quantity}</td></tr>
+              <tr key={it.id} className="border-b last:border-0">
+                <td className="py-2">{it.productName}</td>
+                <td>{it.quantity}</td>
+                <td>{money(it.unitPrice)}</td>
+                <td>{money(Number(it.unitPrice) * it.quantity)}</td>
+              </tr>
             ))}
           </tbody>
         </table>
+        <div className="border-t pt-3 space-y-1 text-sm max-w-xs mr-auto">
+          <div className="flex justify-between"><span className="text-muted">إجمالي الأصناف</span><span>{money(order.subtotal)}</span></div>
+          <div className="flex justify-between"><span className="text-muted">مصاريف الشحن</span><span>{money(order.shippingFee)}</span></div>
+          <div className="flex justify-between"><span className="text-muted">الخصم</span><span>-{money(order.discount)}</span></div>
+          <div className="flex justify-between font-bold text-primary border-t pt-1"><span>الإجمالي</span><span>{money(order.total)}</span></div>
+        </div>
       </div>
     </div>
   );
