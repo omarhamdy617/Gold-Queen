@@ -14,6 +14,7 @@ import {
   primaryKey,
   uniqueIndex,
   index,
+  check,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 
@@ -39,7 +40,12 @@ export const cashTxTypeEnum = pgEnum("cash_tx_type", [
   "ADJUSTMENT",
   "TRANSFER_IN",
   "TRANSFER_OUT",
+  "LOAN_OUT",
+  "LOAN_IN",
 ]);
+// أنواع حركات السلف: سلّفنا حد فلوس (بتاخد من الخزينة) / استلفنا إحنا من حد (بتضيف للخزينة) /
+// استرجعنا فلوس كنا سلّفناها (بتضيف للخزينة) / رجّعنا فلوس كنا مستلفينها (بتاخد من الخزينة)
+export const loanTxTypeEnum = pgEnum("loan_tx_type", ["LOAN_GIVEN", "LOAN_TAKEN", "REPAYMENT_RECEIVED", "REPAYMENT_PAID"]);
 export const serialStatusEnum = pgEnum("serial_status", ["IN_STOCK", "SOLD", "RETURNED"]);
 export const purchasePaymentStatusEnum = pgEnum("purchase_payment_status", ["PAID", "UNPAID", "PARTIAL"]);
 export const customerTypeEnum = pgEnum("customer_type", ["RETAIL", "TRADER"]);
@@ -82,7 +88,23 @@ export const users = pgTable("users", {
   roleId: text("role_id")
     .notNull()
     .references(() => roles.id),
+  // حماية من تخمين كلمة السر: عداد محاولات الدخول الفاشلة المتتالية، وتاريخ انتهاء القفل المؤقت لو اتجاوز الحد
+  failedLoginAttempts: integer("failed_login_attempts").notNull().default(0),
+  lockedUntil: timestamp("locked_until"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// قفل مؤقت لمحاولات دخول فاشلة على *اسم مستخدم غير موجود أصلًا* - منفصل عن failedLoginAttempts/
+// lockedUntil في users نفسها. من غيره، اسم مستخدم موجود بيقفل بعد 5 محاولات فاشلة (رسالة 429 مختلفة)
+// بينما اسم غير موجود يفضل يرجع 401 عادي للأبد - الفرق ده نفسه بيسرب إن اسم المستخدم موجود فعليًا
+// (username enumeration) حتى لو الرسالة النهائية للعميل الفعلي واحدة. بمعاملة الاسم الغير موجود
+// بنفس منطق القفل (بعد نفس عدد المحاولات، بنفس الرسالة)، الفرق ده بيختفي.
+export const loginLockouts = pgTable("login_lockouts", {
+  id: cuid(),
+  usernameKey: varchar("username_key", { length: 100 }).notNull().unique(),
+  failedAttempts: integer("failed_attempts").notNull().default(0),
+  lockedUntil: timestamp("locked_until"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
@@ -159,6 +181,9 @@ export const products = pgTable("products", {
   unit: varchar("unit", { length: 50 }).notNull().default("قطعة"),
   wholesalePrice: money("wholesale_price").notNull().default("0"),
   retailPrice: money("retail_price").notNull().default("0"),
+  // أقل سعر مسموح تتباع بيه الوحدة - NULL يعني بدون حد أدنى. بيتطبق على كل الموظفين ما عدا الأدمن
+  // (اللي يقدر يحط أي سعر حتى لو صفر) عشان يقفل ثغرة تعديل سعر السطر مباشرة للتحايل على صلاحية "خصم كبير"
+  minSellingPrice: money("min_selling_price"),
   avgCost: money("avg_cost").notNull().default("0"),
   reorderPoint: integer("reorder_point").notNull().default(0),
   active: boolean("active").notNull().default(true),
@@ -179,7 +204,12 @@ export const stocks = pgTable(
     quantity: integer("quantity").notNull().default(0),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("stock_product_location_uq").on(t.productId, t.locationId)]
+  (t) => [
+    uniqueIndex("stock_product_location_uq").on(t.productId, t.locationId),
+    // حماية على مستوى قاعدة البيانات نفسها من رصيد سالب - آخر خط دفاع حتى لو فيه باج في كود التطبيق
+    // نسي يتحقق قبل الحفظ (الحماية الأساسية في lib/ops.ts adjustStock نفسها)
+    check("stock_qty_nonneg", sql`${t.quantity} >= 0`),
+  ]
 );
 
 export const productSerials = pgTable(
@@ -191,12 +221,18 @@ export const productSerials = pgTable(
       .references(() => products.id),
     serialNumber: varchar("serial_number", { length: 150 }).notNull().unique(),
     status: serialStatusEnum("status").notNull().default("IN_STOCK"),
-    purchaseItemId: text("purchase_item_id"),
+    // onDelete cascade: لو اتمسحت فاتورة الشراء نفسها (بمعنى إن الاستلام أصلًا اتلغى)، مفيش داعي
+    // السيريالات دي تفضل موجودة "شبح" في قاعدة البيانات وهي متقولة IN_STOCK بينما rصيد stocks
+    // الفعلي بقى منقوص من غيرها بالفعل (شوف تعليق deletePurchaseInner في actions/purchases.ts)
+    purchaseItemId: text("purchase_item_id").references(() => purchaseItems.id, { onDelete: "cascade" }),
     locationId: text("location_id").references(() => locations.id),
     soldAt: timestamp("sold_at"),
     warrantyStart: timestamp("warranty_start"),
     warrantyMonths: integer("warranty_months"),
-    invoiceItemId: text("invoice_item_id"),
+    // onDelete set null (مش cascade): لو اتمسح بند الفاتورة، السيريال الفعلي (القطعة الحقيقية) لسه
+    // موجود فعليًا - الكود بالفعل بيرجّعه IN_STOCK ويصفّر الحقل ده قبل ما يمسح البند، وده بروتكشن إضافي
+    // على مستوى قاعدة البيانات نفسها لو أي مسار تاني نسي يعمل نفس الحاجة
+    invoiceItemId: text("invoice_item_id").references(() => salesInvoiceItems.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("serial_product_idx").on(t.productId)]
@@ -344,10 +380,16 @@ export const collections = pgTable("collections", {
 
 export const consignments = pgTable("consignments", {
   id: cuid(),
+  // فريد لكل موظف - عهدة واحدة تراكمية لكل شخص (بدل ما يتعمل صف جديد كل مرة بالغلط لو حصل
+  // check-then-insert متزامن من غير قفل حقيقي على مستوى قاعدة البيانات)
   holderId: text("holder_id")
     .notNull()
+    .unique()
     .references(() => users.id),
   balance: money("balance").notNull().default("0"),
+  // حد أقصى اختياري لقيمة العهدة اللي ممكن تتدي للموظف ده - NULL يعني من غير حد (بدل 0 عشان
+  // نتجنب نفس لبس "0 = بلا حد" اللي كان سبب مشكلة حد ائتمان العميل السالب)
+  limitAmount: money("limit_amount"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -363,6 +405,9 @@ export const consignmentItems = pgTable("consignment_items", {
   quantity: integer("quantity").notNull(),
   unitPrice: money("unit_price").notNull(),
   returnedQty: integer("returned_qty").notNull().default(0),
+  // الكمية اللي اتباعت فعليًا من العهدة دي لعميل حقيقي (بيع من عهدة الموظف) - منفصلة عن returnedQty
+  // (اللي بترجع فعليًا للمخزون). المتبقي فعليًا مع الموظف = quantity - returnedQty - soldQty
+  soldQty: integer("sold_qty").notNull().default(0),
   settledAmount: money("settled_amount").notNull().default("0"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -388,6 +433,10 @@ export const salesInvoices = pgTable("sales_invoices", {
   createdById: text("created_by_id")
     .notNull()
     .references(() => users.id),
+  // "البايع" الفعلي المسؤول عن أداء المبيعات ده - في الفواتير العادية بيكون نفس اللي سجّل الفاتورة
+  // (createdById)، لكن في حالة "بيع من عهدة الموظف" بيبقى صاحب العهدة اللي باع فعليًا، حتى لو أدمن
+  // أو محاسب هو اللي سجّل عملية التسوية. ده اللي بيتحسب عليه "أداء الموظفين" في لوحة التحكم.
+  soldById: text("sold_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -558,6 +607,37 @@ export const expenses = pgTable("expenses", {
     .references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+// --------------------------------------------------------------------------
+// السلف - رصيد تراكمي لأي شخص (موظف أو غيره)، وممكن كمان "نستلف" إحنا من حد
+// --------------------------------------------------------------------------
+export const loanAccounts = pgTable("loan_accounts", {
+  id: cuid(),
+  name: varchar("name", { length: 200 }).notNull(),
+  phone: varchar("phone", { length: 50 }),
+  notes: text("notes"),
+  // موجب = الشخص ده مديون لينا (سلّفناه إحنا) / سالب = إحنا مديونين له (استلفنا منه)
+  balance: money("balance").notNull().default("0"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const loanTransactions = pgTable(
+  "loan_transactions",
+  {
+    id: cuid(),
+    loanAccountId: text("loan_account_id")
+      .notNull()
+      .references(() => loanAccounts.id),
+    type: loanTxTypeEnum("type").notNull(),
+    amount: money("amount").notNull(),
+    paymentMethodId: text("payment_method_id").references(() => paymentMethods.id),
+    note: text("note"),
+    createdById: text("created_by_id").references(() => users.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("loan_tx_account_idx").on(t.loanAccountId)]
+);
 
 // --------------------------------------------------------------------------
 // AUDIT LOG

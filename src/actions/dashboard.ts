@@ -2,16 +2,17 @@
 import { db, schema } from "@/db";
 import { eq, gte, lte, and, sql, desc } from "drizzle-orm";
 import { requirePermission } from "@/lib/auth";
-
-function startOfDay(d = new Date()) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
-function startOfMonth(d = new Date()) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+import { cairoStartOfDay, cairoStartOfMonth } from "@/lib/time";
 
 export async function getDashboardData() {
   await requirePermission("dashboard.view");
 
-  const today = startOfDay();
-  const monthStart = startOfMonth();
-  const prevMonthStart = startOfMonth(new Date(monthStart.getTime() - 1));
+  // بتوقيت القاهرة مش توقيت السيرفر (UTC) - وإلا بيع حصل الساعة 12:30 بالليل بتوقيت مصر (لسه
+  // "النهارده" بالنسبة للمحل) كان ممكن يتحسب "إمبارح"، وقريب من نهاية الشهر مبيعة يوم 1 كانت ممكن
+  // تتحسب على الشهر اللي فات.
+  const today = cairoStartOfDay();
+  const monthStart = cairoStartOfMonth();
+  const prevMonthStart = cairoStartOfMonth(new Date(monthStart.getTime() - 1));
   const prevMonthEnd = new Date(monthStart.getTime() - 1);
 
   const [salesToday, salesMonth, salesPrevMonth] = await Promise.all([
@@ -34,7 +35,21 @@ export async function getDashboardData() {
     .innerJoin(schema.salesInvoices, eq(schema.salesInvoiceItems.invoiceId, schema.salesInvoices.id))
     .where(gte(schema.salesInvoices.createdAt, monthStart));
 
-  const grossProfit = Number(grossProfitRows[0]?.profit || 0);
+  // المرتجعات المعتمدة (SALE_RETURN) كانت بتتجاهل تمامًا من حساب الربح - يعني بيع اتباع واترجع
+  // بعدين في نفس الشهر كان لسه بيظهر ربحه كامل وكأنه ماترجعش خالص. بنطرح هنا صافي ربح البنود
+  // المرتجعة (سعر البيع اللي كان مسجل - تكلفة الوحدة وقت البيع الأصلي، من salesInvoiceItems لو
+  // البند مرتبط ببند فاتورة حقيقي، وإلا متوسط التكلفة الحالي كتقريب).
+  const approvedReturnProfitRows = await db
+    .select({
+      profit: sql<string>`coalesce(sum((${schema.returnItems.unitPrice} - coalesce(${schema.salesInvoiceItems.unitCost}, ${schema.products.avgCost}, 0)) * ${schema.returnItems.quantity}), 0)`,
+    })
+    .from(schema.returnItems)
+    .innerJoin(schema.returnRequests, eq(schema.returnItems.returnRequestId, schema.returnRequests.id))
+    .leftJoin(schema.salesInvoiceItems, eq(schema.returnItems.invoiceItemId, schema.salesInvoiceItems.id))
+    .leftJoin(schema.products, eq(schema.returnItems.productId, schema.products.id))
+    .where(and(eq(schema.returnRequests.kind, "SALE_RETURN"), eq(schema.returnRequests.status, "APPROVED"), gte(schema.returnRequests.approvedAt, monthStart)));
+
+  const grossProfit = Number(grossProfitRows[0]?.profit || 0) - Number(approvedReturnProfitRows[0]?.profit || 0);
   const netProfit = grossProfit - Number(expensesMonth[0]?.total || 0);
 
   const drawers = await db.select().from(schema.cashDrawers);
@@ -44,7 +59,10 @@ export async function getDashboardData() {
   const totalReceivable = customers.reduce((s, c) => s + Math.max(Number(c.balance), 0), 0);
 
   const suppliers = await db.select().from(schema.suppliers);
-  const totalPayable = suppliers.reduce((s, s2) => s + Number(s2.balance), 0);
+  // نفس منطق استبعاد الأرصدة السالبة المستخدم في totalReceivable بالظبط - مورد برصيد سالب معناه
+  // إحنا دافعينله زيادة عن المطلوب (سلفة/رصيد دائن ليه)، مش إحنا مديونين له أكتر، فمينفعش يتجمع
+  // كـ"مستحق علينا" لأنه بيقلل الإجمالي بالغلط بدل ما يتجاهل
+  const totalPayable = suppliers.reduce((s, s2) => s + Math.max(Number(s2.balance), 0), 0);
 
   const stockRows = await db
     .select({ quantity: schema.stocks.quantity, avgCost: schema.products.avgCost })
@@ -59,33 +77,49 @@ export async function getDashboardData() {
   }
   const lowStock = products.filter((p) => (stocksByProduct.get(p.id) || 0) <= p.reorderPoint);
 
-  // أداء الموظفين بالاسم هذا الشهر
+  // أداء الموظفين بالاسم هذا الشهر - بيتحسب على soldById (البايع الفعلي) مش createdById (اللي سجّل
+  // الفاتورة في الشاشة) عشان في حالة "بيع من عهدة الموظف" البايع الحقيقي هو صاحب العهدة حتى لو
+  // أدمن/محاسب هو اللي سجّل عملية التسوية. في الفواتير العادية الاتنين نفس الشخص أصلًا.
   const perf = await db
     .select({
-      userId: schema.salesInvoices.createdById,
+      userId: schema.salesInvoices.soldById,
       userName: schema.users.fullName,
       salesCount: sql<number>`count(*)`,
       salesTotal: sql<string>`coalesce(sum(${schema.salesInvoices.total}), 0)`,
     })
     .from(schema.salesInvoices)
-    .innerJoin(schema.users, eq(schema.salesInvoices.createdById, schema.users.id))
+    .innerJoin(schema.users, eq(schema.salesInvoices.soldById, schema.users.id))
     .where(gte(schema.salesInvoices.createdAt, monthStart))
-    .groupBy(schema.salesInvoices.createdById, schema.users.fullName);
+    .groupBy(schema.salesInvoices.soldById, schema.users.fullName);
 
   const collectionsPerf = await db
     .select({
       userId: schema.collections.createdById,
+      userName: schema.users.fullName,
       total: sql<string>`coalesce(sum(${schema.collections.amount}), 0)`,
     })
     .from(schema.collections)
+    .innerJoin(schema.users, eq(schema.collections.createdById, schema.users.id))
     .where(gte(schema.collections.createdAt, monthStart))
-    .groupBy(schema.collections.createdById);
+    .groupBy(schema.collections.createdById, schema.users.fullName);
   const collMap = new Map(collectionsPerf.map((c) => [c.userId, Number(c.total)]));
 
-  const employeePerf = perf.map((p) => ({ ...p, collections: collMap.get(p.userId) || 0 }));
+  // قبل كده الموظفين اللي شغلهم تحصيل بس (بلا أي فواتير مبيعات باسمهم) كانوا بيختفوا من اللستة
+  // خالص - القائمة الأساسية كانت مبنية على salesInvoices بس، وأي بيانات تحصيل ليهم في collMap
+  // كانت بتتحسب بس متعرضش لعدم وجود صف أصلًا. دلوقتي بنبني اللستة من اتحاد الاتنين مع بعض.
+  const perfMap = new Map(perf.map((p) => [p.userId, p]));
+  for (const c of collectionsPerf) {
+    if (!perfMap.has(c.userId)) {
+      perfMap.set(c.userId, { userId: c.userId, userName: c.userName, salesCount: 0, salesTotal: "0" });
+    }
+  }
+  // كلا الاستعلامين معمول عليهم innerJoin مع users، فـ userId فعليًا مش هيبقى null أبدًا هنا - بس
+  // النوع في الـ schema بيسمح بـ null (العمود nullable أصلًا) فبنأكد للتايبسكريبت بـ "!" إن هي مش فاضية
+  const employeePerf = [...perfMap.values()].map((p) => ({ ...p, collections: collMap.get(p.userId!) || 0 }));
 
   const [settingsRow] = await db.select().from(schema.settings);
-  const largeInvoiceThreshold = Number(settingsRow?.largeInvoiceAlert || 10000);
+  const parsedThreshold = Number(settingsRow?.largeInvoiceAlert);
+  const largeInvoiceThreshold = Number.isFinite(parsedThreshold) ? parsedThreshold : 10000;
   const largeInvoices = await db
     .select()
     .from(schema.salesInvoices)

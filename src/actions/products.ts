@@ -5,37 +5,69 @@ import { requirePermission } from "@/lib/auth";
 import { logAudit } from "@/lib/auth";
 import { toActionError } from "@/lib/actionError";
 import { revalidatePath } from "next/cache";
+import { randomBytes } from "crypto";
 
 export async function listCategories() {
+  // كانت من غير أي تحقق تسجيل دخول خالص - أي حد عنده الرابط يقدر يشوف قائمة الفئات من غير ما يكون مسجل دخول
+  await requirePermission("products.view");
   return db.select().from(schema.categories);
 }
 
 export async function createCategory(data: { name: string; requiresSerial: boolean; defaultWarrantyMonths?: number }) {
-  await requirePermission("products.manage");
-  const [cat] = await db.insert(schema.categories).values(data).returning();
-  revalidatePath("/products");
-  return cat;
+  try {
+    await requirePermission("products.manage");
+    if (!data.name?.trim()) throw new Error("اسم الفئة مطلوب");
+    const [cat] = await db.insert(schema.categories).values(data).returning();
+    revalidatePath("/products");
+    return cat;
+  } catch (e) {
+    // قبل كده كان بينفذ db.insert مباشرة من غير try/catch - اسم فئة مكرر (unique) كان بيرجع
+    // خطأ خام من قاعدة البيانات بدل رسالة عربية مفهومة
+    return toActionError(e, "تعذر إضافة الفئة - يمكن الاسم ده مستخدم بالفعل لفئة تانية");
+  }
 }
 
 export async function listLocations() {
+  await requirePermission("products.view");
   return db.select().from(schema.locations);
 }
 
 export async function createLocation(name: string, type: "SHOP" | "WAREHOUSE" | "OTHER") {
-  await requirePermission("settings.manage");
-  const [loc] = await db.insert(schema.locations).values({ name, type }).returning();
-  revalidatePath("/products");
-  return loc;
+  try {
+    await requirePermission("settings.manage");
+    if (!name?.trim()) throw new Error("اسم المكان مطلوب");
+    const [loc] = await db.insert(schema.locations).values({ name, type }).returning();
+    revalidatePath("/products");
+    return loc;
+  } catch (e) {
+    return toActionError(e, "تعذر إضافة المكان - يمكن الاسم ده مستخدم بالفعل لمكان تاني");
+  }
 }
 
+// نفس مشكلة كود الفاتورة القديمة بالظبط: Math.random() ضيق كان بيزوّد احتمال تكرار الكود مع زيادة
+// عدد المنتجات ويوقّع خطأ غامض بدل ما يتحفظ المنتج. استخدمنا crypto.randomBytes بدل كده زي الفاتورة.
 function genSku() {
-  return "P" + Math.random().toString(36).slice(2, 8).toUpperCase();
+  return "P" + randomBytes(5).toString("hex").toUpperCase();
 }
 function genBarcode() {
-  // EAN-13-like random numeric barcode
-  let code = "20";
-  for (let i = 0; i < 10; i++) code += Math.floor(Math.random() * 10);
-  return code;
+  // كان بيولّد 12 رقم بس ("20" + 10 أرقام) من غير أي check digit - يعني مش باركود EAN-13 حقيقي
+  // (اللي لازم يكون 13 رقم بالظبط، آخر رقم فيهم checksum محسوب من الـ12 اللي قبله). كان "شغال"
+  // بالصدفة بس لأن ملصق الطباعة بيرندره بصيغة CODE128 اللي مالهاش شروط عدد أرقام أو checksum -
+  // لكن لو حد استورد الباركود ده في أي نظام تاني بيتوقع EAN-13 حقيقي (زي سكانر خارجي أو منصة بيع)، هيترفض كباركود غير صحيح.
+  let prefix = "20";
+  const bytes = randomBytes(10);
+  for (let i = 0; i < 10; i++) prefix += (bytes[i] % 10).toString();
+  const checkDigit = ean13CheckDigit(prefix);
+  return prefix + checkDigit;
+}
+
+// حساب checksum معيار EAN-13 القياسي: بداية من اليمين، الأرقام في المواضع الفردية تتضرب في 3
+// والزوجية في 1 (أو العكس حسب الاتجاه)، والـ check digit هو الرقم اللي يخلي المجموع قابل للقسمة على 10
+function ean13CheckDigit(twelveDigits: string): string {
+  const digits = twelveDigits.split("").map(Number);
+  const sum = digits.reduce((s, d, i) => s + d * (i % 2 === 0 ? 1 : 3), 0);
+  const check = (10 - (sum % 10)) % 10;
+  return String(check);
 }
 
 export async function createProduct(data: {
@@ -46,11 +78,20 @@ export async function createProduct(data: {
   unit?: string;
   wholesalePrice: number;
   retailPrice: number;
+  minSellingPrice?: number;
   reorderPoint: number;
   barcode?: string;
   sku?: string;
   imageUrl?: string;
 }) {
+  try {
+    return await createProductInner(data);
+  } catch (e) {
+    return toActionError(e, "تعذر إضافة المنتج - يمكن الباركود أو الكود مكرر لمنتج تاني");
+  }
+}
+
+async function createProductInner(data: Parameters<typeof createProduct>[0]) {
   await requirePermission("products.manage");
   const [p] = await db
     .insert(schema.products)
@@ -62,6 +103,7 @@ export async function createProduct(data: {
       unit: data.unit || "قطعة",
       wholesalePrice: data.wholesalePrice.toFixed(2),
       retailPrice: data.retailPrice.toFixed(2),
+      minSellingPrice: data.minSellingPrice !== undefined && data.minSellingPrice !== null ? data.minSellingPrice.toFixed(2) : undefined,
       reorderPoint: data.reorderPoint,
       sku: data.sku || genSku(),
       barcode: data.barcode || genBarcode(),
@@ -75,7 +117,7 @@ export async function createProduct(data: {
 
 export async function updateProduct(id: string, data: Partial<{
   name: string; categoryId: string; requiresSerial: boolean; warrantyMonths: number;
-  unit: string; wholesalePrice: number; retailPrice: number; reorderPoint: number; active: boolean; imageUrl: string;
+  unit: string; wholesalePrice: number; retailPrice: number; minSellingPrice: number | null; reorderPoint: number; active: boolean; imageUrl: string;
 }>) {
   try {
     return await updateProductInner(id, data);
@@ -90,6 +132,7 @@ async function updateProductInner(id: string, data: Parameters<typeof updateProd
   const payload: any = { ...data, updatedAt: new Date() };
   if (data.wholesalePrice !== undefined) payload.wholesalePrice = data.wholesalePrice.toFixed(2);
   if (data.retailPrice !== undefined) payload.retailPrice = data.retailPrice.toFixed(2);
+  if (data.minSellingPrice !== undefined) payload.minSellingPrice = data.minSellingPrice === null ? null : data.minSellingPrice.toFixed(2);
   const [p] = await db.update(schema.products).set(payload).where(eq(schema.products.id, id)).returning();
   await logAudit({ action: "UPDATE", entityType: "Product", entityId: id, before, after: p });
   revalidatePath("/products");
@@ -216,6 +259,8 @@ export async function findBySerial(serialNumber: string) {
 }
 
 export async function getAvailableSerials(productId: string, locationId?: string) {
+  // كانت من غير أي تحقق تسجيل دخول - أي حد يقدر يشوف كل أرقام السيريال المتاحة من غير ما يكون مسجل دخول
+  await requirePermission("products.view");
   const rows = await db
     .select()
     .from(schema.productSerials)

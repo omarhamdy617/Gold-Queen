@@ -4,16 +4,17 @@ import { updateOrderStatus } from "@/actions/orders";
 import { useRouter } from "next/navigation";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { isActionError } from "@/lib/actionError";
+import { ORDER_STATUS_TRANSITIONS, ORDER_STATUS_LABELS as LABELS } from "@/lib/orderStatus";
 
-const LABELS: Record<string, string> = { PREPARING: "قيد التجهيز", SHIPPED: "في الشحن", DELIVERED: "تم التسليم", RETURNED: "مرتجع" };
 const COLORS: Record<string, string> = { PREPARING: "bg-neutral-200", SHIPPED: "bg-blue-200", DELIVERED: "bg-green-200", RETURNED: "bg-red-200" };
 
-export default function StatusControl({ orderId, status, canEdit = true, customerPhone }: { orderId: string; status: string; canEdit?: boolean; customerPhone?: string }) {
+export default function StatusControl({ orderId, status, canEdit = true, customerPhone, paymentMethods = [] }: { orderId: string; status: string; canEdit?: boolean; customerPhone?: string; paymentMethods?: { id: string; name: string }[] }) {
   const [pending, start] = useTransition();
   const router = useRouter();
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [collectionStatus, setCollectionStatus] = useState<"PENDING" | "COLLECTED">("COLLECTED");
   const [collectedAmount, setCollectedAmount] = useState("");
+  const [paymentMethodId, setPaymentMethodId] = useState(paymentMethods[0]?.id || "");
   const [confirmPhone, setConfirmPhone] = useState("");
   const [returnReason, setReturnReason] = useState("");
   const [error, setError] = useState("");
@@ -22,8 +23,14 @@ export default function StatusControl({ orderId, status, canEdit = true, custome
     return <span className={`text-xs rounded px-2 py-1 ${COLORS[status]}`}>{LABELS[status]}</span>;
   }
 
+  // القائمة المنسدلة كانت بتعرض كل الحالات الأربعة دايمًا بغض النظر عن الحالة الحالية - ممكن تختار
+  // "قيد التجهيز" لأوردر متسلّم بالفعل من الشاشة نفسها، وترفض بعدها من السيرفر فقط. دلوقتي بتعرض
+  // بس الحالة الحالية + الانتقالات المسموحة فعليًا منها (نفس خريطة orders.ts في السيرفر)
+  const allowedOptions = [status, ...(ORDER_STATUS_TRANSITIONS[status] || [])];
+
   function onChange(newStatus: string) {
     setError("");
+    if (newStatus === status) return;
     if (newStatus === "DELIVERED" || newStatus === "RETURNED") {
       setPendingStatus(newStatus);
       return;
@@ -48,11 +55,15 @@ export default function StatusControl({ orderId, status, canEdit = true, custome
       if (collectionStatus === "COLLECTED" && (!collectedAmount || parseFloat(collectedAmount) < 0)) {
         return setError("أدخل المبلغ المحصّل (سعر الأوردر)");
       }
+      if (collectionStatus === "COLLECTED" && parseFloat(collectedAmount) > 0 && !paymentMethodId) {
+        return setError("اختار طريقة التحصيل عشان المبلغ يدخل الخزينة");
+      }
       start(async () => {
         try {
           const result = await updateOrderStatus(orderId, "DELIVERED", {
             collectionStatus,
             collectedAmount: collectionStatus === "COLLECTED" ? parseFloat(collectedAmount) : undefined,
+            paymentMethodId: collectionStatus === "COLLECTED" ? paymentMethodId : undefined,
           });
           if (isActionError(result)) { setError(result.error); return; }
           setPendingStatus(null);
@@ -95,7 +106,13 @@ export default function StatusControl({ orderId, status, canEdit = true, custome
               <option value="PENDING">لسه ما اتحصلش</option>
             </select>
             {collectionStatus === "COLLECTED" && (
-              <input type="number" step="0.01" placeholder="سعر الأوردر (المبلغ المحصّل)" value={collectedAmount} onChange={(e) => setCollectedAmount(e.target.value)} className="border rounded px-2 py-1 text-xs w-full" />
+              <>
+                <input type="number" step="0.01" placeholder="سعر الأوردر (المبلغ المحصّل)" value={collectedAmount} onChange={(e) => setCollectedAmount(e.target.value)} className="border rounded px-2 py-1 text-xs w-full" />
+                <select value={paymentMethodId} onChange={(e) => setPaymentMethodId(e.target.value)} className="border rounded px-2 py-1 text-xs w-full">
+                  <option value="">اختار طريقة التحصيل</option>
+                  {paymentMethods.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </>
             )}
           </>
         )}
@@ -116,13 +133,16 @@ export default function StatusControl({ orderId, status, canEdit = true, custome
   }
 
   return (
-    <select
-      value={status}
-      disabled={pending}
-      onChange={(e) => onChange(e.target.value)}
-      className={`text-xs rounded px-2 py-1 border-0 ${COLORS[status]}`}
-    >
-      {Object.entries(LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-    </select>
+    <div>
+      <select
+        value={status}
+        disabled={pending}
+        onChange={(e) => onChange(e.target.value)}
+        className={`text-xs rounded px-2 py-1 border-0 ${COLORS[status]}`}
+      >
+        {allowedOptions.map((k) => <option key={k} value={k}>{LABELS[k]}</option>)}
+      </select>
+      {error && <div className="text-red-600 text-[11px]">{error}</div>}
+    </div>
   );
 }

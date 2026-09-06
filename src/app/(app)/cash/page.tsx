@@ -2,6 +2,7 @@ import { listCashDrawers, listCashTransactions } from "@/actions/cash";
 import { money, dateAr } from "@/lib/format";
 import CashAdjustForm from "./AdjustForm";
 import TransactionDetail from "./TransactionDetail";
+import TransferForm from "./TransferForm";
 
 export default async function CashPage() {
   const drawers = await listCashDrawers();
@@ -16,6 +17,8 @@ export default async function CashPage() {
           إجمالي الكاش: {money(total)}
         </div>
       </div>
+
+      <TransferForm drawers={drawers} />
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {drawers.map((d) => (
@@ -72,6 +75,8 @@ function typeLabel(t: string) {
     ADJUSTMENT: "تسوية يدوية",
     TRANSFER_IN: "تحويل داخل",
     TRANSFER_OUT: "تحويل خارج",
+    LOAN_OUT: "سلفة/سداد (خارج)",
+    LOAN_IN: "سلفة/تحصيل (داخل)",
   };
   return map[t] || t;
 }

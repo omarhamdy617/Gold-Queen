@@ -2,12 +2,7 @@
 import { db, schema } from "@/db";
 import { eq, gte, and, sql } from "drizzle-orm";
 import { can } from "@/lib/auth";
-
-function startOfDay(d = new Date()) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
+import { cairoStartOfDay } from "@/lib/time";
 
 export type AlertItem = { label: string; count: number; href: string };
 
@@ -15,11 +10,14 @@ export type AlertItem = { label: string; count: number; href: string };
 export async function getAlertsSummary(): Promise<AlertItem[]> {
   if (!(await can("dashboard.view"))) return [];
 
-  const today = startOfDay();
+  const today = cairoStartOfDay(); // بتوقيت القاهرة مش UTC - نفس تصحيح الداشبورد
   const alerts: AlertItem[] = [];
 
   const [settingsRow] = await db.select().from(schema.settings);
-  const largeInvoiceThreshold = Number(settingsRow?.largeInvoiceAlert || 10000);
+  // Number.isFinite بدل الاعتماد على || بس - قيمة مخزّنة تالفة زي النص "NaN" كانت بتفشل Number()
+  // وترجع NaN اللي هو falsy لكن يمرّ من عملية المقارنة sql`>= NaN` بشكل غير متوقع بدل ما يقع على القيمة الافتراضية
+  const parsedThreshold = Number(settingsRow?.largeInvoiceAlert);
+  const largeInvoiceThreshold = Number.isFinite(parsedThreshold) ? parsedThreshold : 10000;
   const largeInvoices = await db
     .select({ id: schema.salesInvoices.id })
     .from(schema.salesInvoices)

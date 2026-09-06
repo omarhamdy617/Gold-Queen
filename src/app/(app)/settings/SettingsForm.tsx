@@ -1,6 +1,8 @@
 "use client";
 import { useState, useTransition } from "react";
 import { updateSettings } from "@/actions/settings";
+import { isActionError } from "@/lib/actionError";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function SettingsForm({ settings }: { settings: any }) {
   const [pending, start] = useTransition();
@@ -15,24 +17,31 @@ export default function SettingsForm({ settings }: { settings: any }) {
     returnReasons: settings?.returnReasons || "منتج تالف\nعيب مصنعي\nغير مطابق للمواصفات\nالعميل غيّر رأيه\nوصل بالخطأ / كمية زيادة\nأخرى",
   });
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        setError("");
         start(async () => {
-          await updateSettings({
-            companyName: form.companyName,
-            companyAddress: form.companyAddress,
-            companyPhone: form.companyPhone,
-            companyPhone2: form.companyPhone2,
-            defaultVatRate: parseFloat(form.defaultVatRate),
-            largeInvoiceAlert: parseFloat(form.largeInvoiceAlert),
-            adminWhatsapp: form.adminWhatsapp,
-            returnReasons: form.returnReasons,
-          });
-          setSaved(true);
-          setTimeout(() => setSaved(false), 2000);
+          try {
+            const r = await updateSettings({
+              companyName: form.companyName,
+              companyAddress: form.companyAddress,
+              companyPhone: form.companyPhone,
+              companyPhone2: form.companyPhone2,
+              defaultVatRate: parseFloat(form.defaultVatRate),
+              largeInvoiceAlert: parseFloat(form.largeInvoiceAlert),
+              adminWhatsapp: form.adminWhatsapp,
+              returnReasons: form.returnReasons,
+            });
+            if (isActionError(r)) { setError(r.error); return; }
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2000);
+          } catch (e: any) {
+            setError(friendlyErrorMessage(e, "تعذر حفظ الإعدادات"));
+          }
         });
       }}
       className="app-card p-4 space-y-3"
@@ -74,6 +83,7 @@ export default function SettingsForm({ settings }: { settings: any }) {
         <label className="text-xs text-muted">أسباب المرتجعات (سطر لكل سبب - دي اللي هتظهر في قائمة اختيار سبب المرتجع)</label>
         <textarea value={form.returnReasons} onChange={(e) => setForm({ ...form, returnReasons: e.target.value })} rows={6} className="border rounded px-3 py-2 text-sm w-full mt-1 font-mono" />
       </div>
+      {error && <div className="text-red-600 text-sm bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>}
       <button disabled={pending} className="bg-primary text-white rounded-lg px-4 py-2 text-sm">{saved ? "تم الحفظ ✓" : "حفظ الإعدادات"}</button>
     </form>
   );

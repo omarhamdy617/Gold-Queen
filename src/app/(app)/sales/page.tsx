@@ -1,15 +1,18 @@
 import { listInvoices } from "@/actions/sales";
 import { money, dateAr } from "@/lib/format";
 import Link from "next/link";
+import InvoiceSearchBox from "./InvoiceSearchBox";
 
-export default async function SalesPage() {
-  const invoices = await listInvoices();
+export default async function SalesPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const { q } = await searchParams;
+  const invoices = await listInvoices(q);
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-bold">الفواتير</h1>
         <Link href="/sales/new" className="bg-gold text-white rounded-lg px-4 py-2 text-sm">+ فاتورة جديدة</Link>
       </div>
+      <InvoiceSearchBox initialQuery={q || ""} />
       <div className="bg-white rounded-xl shadow overflow-x-auto">
         <table className="w-full text-sm text-right">
           <thead>
@@ -35,6 +38,9 @@ export default async function SalesPage() {
                 <td>{dateAr(inv.createdAt)}</td>
               </tr>
             ))}
+            {invoices.length === 0 && (
+              <tr><td colSpan={7} className="p-4 text-center text-muted">لا توجد فواتير مطابقة</td></tr>
+            )}
           </tbody>
         </table>
       </div>

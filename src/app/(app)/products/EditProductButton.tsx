@@ -27,6 +27,7 @@ export default function EditProductButton({ product, categories }: { product: an
     warrantyMonths: product.warrantyMonths ? String(product.warrantyMonths) : "",
     wholesalePrice: String(product.wholesalePrice ?? ""),
     retailPrice: String(product.retailPrice ?? ""),
+    minSellingPrice: product.minSellingPrice !== null && product.minSellingPrice !== undefined ? String(product.minSellingPrice) : "",
     reorderPoint: String(product.reorderPoint ?? "0"),
     active: product.active !== false,
   });
@@ -46,6 +47,7 @@ export default function EditProductButton({ product, categories }: { product: an
           warrantyMonths: form.warrantyMonths ? parseInt(form.warrantyMonths) : undefined,
           wholesalePrice: wholesale,
           retailPrice: retail,
+          minSellingPrice: form.minSellingPrice.trim() ? parseFloat(form.minSellingPrice) : null,
           reorderPoint: parseInt(form.reorderPoint || "0"),
           active: form.active,
           imageUrl: imagePreview || undefined,
@@ -107,6 +109,7 @@ export default function EditProductButton({ product, categories }: { product: an
           )}
           <input type="number" step="0.01" placeholder="سعر الجملة" value={form.wholesalePrice} onChange={(e) => setForm({ ...form, wholesalePrice: e.target.value })} className="border rounded px-3 py-2 text-sm" />
           <input type="number" step="0.01" placeholder="سعر التجزئة" value={form.retailPrice} onChange={(e) => setForm({ ...form, retailPrice: e.target.value })} className="border rounded px-3 py-2 text-sm" />
+          <input type="number" step="0.01" placeholder="أقل سعر بيع مسموح (اختياري)" value={form.minSellingPrice} onChange={(e) => setForm({ ...form, minSellingPrice: e.target.value })} className="border rounded px-3 py-2 text-sm" />
           <input type="number" placeholder="حد إعادة الطلب" value={form.reorderPoint} onChange={(e) => setForm({ ...form, reorderPoint: e.target.value })} className="border rounded px-3 py-2 text-sm" />
           <label className="flex items-center gap-2 text-sm border rounded px-3 py-2">
             <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />

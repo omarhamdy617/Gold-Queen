@@ -5,6 +5,7 @@ import { money } from "@/lib/format";
 import ConsignmentForm from "./ConsignmentForm";
 import SettleForm from "./SettleForm";
 import ConsignmentDetail from "./ConsignmentDetail";
+import ConsignmentLimitForm from "./ConsignmentLimitForm";
 
 export default async function ConsignmentsPage() {
   const [consignments, employees, products, locations, paymentMethods] = await Promise.all([
@@ -18,10 +19,16 @@ export default async function ConsignmentsPage() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {consignments.map((c) => (
           <div key={c.id} className="app-card p-4 space-y-2">
-            <div className="font-bold">{c.holderName}</div>
+            <div className="flex items-center justify-between">
+              <div className="font-bold">{c.holderName}</div>
+              {c.limitAmount !== null && c.limitAmount !== undefined && (
+                <div className="text-[10px] text-muted">الحد الأقصى: {money(c.limitAmount)}</div>
+              )}
+            </div>
             <div className={`text-lg font-bold ${Number(c.balance) > 0 ? "text-red-600" : "text-green-600"}`}>{money(c.balance)}</div>
-            <SettleForm consignmentId={c.id} paymentMethods={paymentMethods} />
-            <ConsignmentDetail consignmentId={c.id} locations={locations} />
+            <ConsignmentLimitForm consignmentId={c.id} currentLimit={c.limitAmount} />
+            <SettleForm consignmentId={c.id} paymentMethods={paymentMethods} consignmentBalance={Number(c.balance)} />
+            <ConsignmentDetail consignmentId={c.id} locations={locations} paymentMethods={paymentMethods} />
           </div>
         ))}
         {consignments.length === 0 && <p className="text-muted text-sm">لا يوجد عهدة مسجلة بعد</p>}

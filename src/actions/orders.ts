@@ -2,9 +2,17 @@
 import { db, schema } from "@/db";
 import { eq, desc } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit, genCode } from "@/lib/auth";
-import { adjustStock, stockShortageMessage } from "@/lib/ops";
+import { adjustStock, stockShortageMessage, postCashByPaymentMethod } from "@/lib/ops";
+import { inArray } from "drizzle-orm";
 import { toActionError } from "@/lib/actionError";
+import { normalizePhone } from "@/lib/phone";
 import { revalidatePath } from "next/cache";
+
+// خط سير واضح لحالة الأوردر: مش أي حالة تقدر تروح لأي حالة تانية بأي ترتيب. قبل كده كان ممكن
+// تحول أوردر من "قيد التجهيز" لـ"تم التسليم" على طول من غير ما يمر بـ"في الشحن"، أو ترجّع أوردر
+// "مرتجع" لـ"تم التسليم" تاني وده كان بيرصد المخزون مرتين (مرة وقت الإرجاع، ومرة وهمية تانية).
+// (الخريطة نفسها منقولة لـ lib/orderStatus.ts عشان الكلينت يستخدمها في فلترة القائمة المنسدلة)
+import { ORDER_STATUS_TRANSITIONS } from "@/lib/orderStatus";
 
 // -------------------- تسجيل الأوردر (السلز/الكول سنتر) --------------------
 // المكان اللي هيتجهز منه الأوردر بقى اختياري وقت التسجيل - بيتحدد بعد كده في خطوة منفصلة
@@ -44,9 +52,9 @@ async function createOrderInner(input: Parameters<typeof createOrder>[0]) {
   const order = await db.transaction(async (tx) => {
     // ربط/إنشاء العميل تلقائيًا بالهاتف عشان منعملش عميل مكرر ولما نكتب نفس الرقم تاني يترجعلنا نفس العميل
     let customerId = input.customerId;
-    const phone = input.customerPhone.trim();
+    const phone = normalizePhone(input.customerPhone.trim());
     if (!customerId && phone) {
-      const [existing] = await tx.select().from(schema.customers).where(eq(schema.customers.phone, phone));
+      const [existing] = await tx.select().from(schema.customers).where(eq(schema.customers.phone, phone)).for("update");
       if (existing) {
         customerId = existing.id;
         // حدّث بيانات العميل بأحدث عنوان/اسم لو اتغيروا
@@ -118,13 +126,16 @@ async function assignOrderLocationInner(orderId: string, locationId: string) {
   const session = await requireSession();
   if (!locationId) throw new Error("لازم تحدد المكان");
 
-  const before = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).then((r) => r[0]);
-  if (!before) throw new Error("الأوردر غير موجود");
-  if (before.locationId) throw new Error("المكان اتحدد للأوردر ده بالفعل");
-
-  const items = await db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, orderId));
-
+  let before: any = null;
   await db.transaction(async (tx) => {
+    // قفل صف الأوردر الأول جوه المعاملة - لو اتنين ضغطوا "تحديد المكان" لنفس الأوردر في نفس اللحظة،
+    // التاني هيستنى لحد ما الأول يخلص، وهيلاقي locationId اتحدد بالفعل فهيترفض بدل ما ينقص المخزون مرتين.
+    const [order] = await tx.select().from(schema.orders).where(eq(schema.orders.id, orderId)).for("update");
+    if (!order) throw new Error("الأوردر غير موجود");
+    if (order.locationId) throw new Error("المكان اتحدد للأوردر ده بالفعل");
+    before = order;
+
+    const items = await tx.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, orderId));
     for (const item of items) {
       const newQty = await adjustStock(tx, item.productId, locationId, -item.quantity);
       if (newQty < 0) {
@@ -160,37 +171,51 @@ async function assignOrderShippingInner(orderId: string, input: Parameters<typeo
   await requirePermission("orders.ship");
   const session = await requireSession();
 
-  const existingOrder = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).then((r) => r[0]);
-  if (!existingOrder) throw new Error("الأوردر غير موجود");
-  if (!existingOrder.locationId) throw new Error("لازم تحدد المحل/المخزن اللي هيتجهز منه الأوردر الأول قبل ما تحدد الشحن");
+  let before: any = null;
+  const order = await db.transaction(async (tx) => {
+    // قبل كده كانت بتقرا الأوردر بـ select عادي من غير قفل ومن غير transaction، وبعدين تعمل update
+    // غير مشروط - لو اتنين فتحوا "تحديد الشحن" لنفس الأوردر في نفس اللحظة (أو حد كان بيحدّث حالته
+    // لـ"تم التسليم"/"مرتجع" في نفس الوقت)، كل القراءتين كانوا بيشوفوا نفس الحالة القديمة، وآخر
+    // update بيكسب من غير أي تحقق - ممكن يرجّع أوردر متسلّم لحالة "في الشحن" تاني ويمسح بيانات
+        // التسليم/التحصيل المسجلة من غير أي تحذير. القفل هنا بيضمن إن أي محاولة تانية تستنى وتشوف
+    // الحالة الفعلية المحدّثة قبل ما تكمل.
+    const [existingOrder] = await tx.select().from(schema.orders).where(eq(schema.orders.id, orderId)).for("update");
+    if (!existingOrder) throw new Error("الأوردر غير موجود");
+    if (!existingOrder.locationId) throw new Error("لازم تحدد المحل/المخزن اللي هيتجهز منه الأوردر الأول قبل ما تحدد الشحن");
+    if (existingOrder.status === "DELIVERED" || existingOrder.status === "RETURNED") {
+      throw new Error("الأوردر ده خلص خلاص (تم التسليم أو مرتجع) - متقدرش تعدل بيانات الشحن بعد كده");
+    }
+    before = existingOrder;
 
-  let courierName: string | undefined;
-  let shippingCompanyName: string | undefined;
-  if (input.shippingMethod === "INTERNAL_COURIER" && input.courierId) {
-    const [c] = await db.select().from(schema.couriers).where(eq(schema.couriers.id, input.courierId));
-    courierName = c?.name;
-  }
-  if (input.shippingMethod === "EXTERNAL_COMPANY" && input.shippingCompanyId) {
-    const [c] = await db.select().from(schema.shippingCompanies).where(eq(schema.shippingCompanies.id, input.shippingCompanyId));
-    shippingCompanyName = c?.name;
-  }
+    let courierName: string | undefined;
+    let shippingCompanyName: string | undefined;
+    if (input.shippingMethod === "INTERNAL_COURIER" && input.courierId) {
+      const [c] = await tx.select().from(schema.couriers).where(eq(schema.couriers.id, input.courierId));
+      courierName = c?.name;
+    }
+    if (input.shippingMethod === "EXTERNAL_COMPANY" && input.shippingCompanyId) {
+      const [c] = await tx.select().from(schema.shippingCompanies).where(eq(schema.shippingCompanies.id, input.shippingCompanyId));
+      shippingCompanyName = c?.name;
+    }
 
-  const before = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).then((r) => r[0]);
-  const [order] = await db
-    .update(schema.orders)
-    .set({
-      shippingMethod: input.shippingMethod,
-      courierId: input.courierId,
-      courierName,
-      shippingCompanyId: input.shippingCompanyId,
-      shippingCompanyName,
-      status: "SHIPPED",
-      assignedById: session.userId,
-      assignedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(schema.orders.id, orderId))
-    .returning();
+    const [updated] = await tx
+      .update(schema.orders)
+      .set({
+        shippingMethod: input.shippingMethod,
+        courierId: input.courierId,
+        courierName,
+        shippingCompanyId: input.shippingCompanyId,
+        shippingCompanyName,
+        status: "SHIPPED",
+        assignedById: session.userId,
+        assignedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.orders.id, orderId))
+      .returning();
+    return updated;
+  });
+
   await logAudit({ action: "SHIP", entityType: "Order", entityId: orderId, before, after: order });
   revalidatePath("/orders");
   return order;
@@ -200,7 +225,7 @@ async function assignOrderShippingInner(orderId: string, input: Parameters<typeo
 export async function updateOrderStatus(
   orderId: string,
   status: "PREPARING" | "SHIPPED" | "DELIVERED" | "RETURNED",
-  extra?: { collectionStatus?: "PENDING" | "COLLECTED"; collectedAmount?: number; returnReason?: string }
+  extra?: { collectionStatus?: "PENDING" | "COLLECTED"; collectedAmount?: number; paymentMethodId?: string; returnReason?: string }
 ) {
   try {
     return await updateOrderStatusInner(orderId, status, extra);
@@ -212,12 +237,10 @@ export async function updateOrderStatus(
 async function updateOrderStatusInner(
   orderId: string,
   status: "PREPARING" | "SHIPPED" | "DELIVERED" | "RETURNED",
-  extra?: { collectionStatus?: "PENDING" | "COLLECTED"; collectedAmount?: number; returnReason?: string }
+  extra?: { collectionStatus?: "PENDING" | "COLLECTED"; collectedAmount?: number; paymentMethodId?: string; returnReason?: string }
 ) {
   await requirePermission("orders.ship");
   const session = await requireSession();
-  const before = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).then((r) => r[0]);
-  if (!before) throw new Error("الأوردر غير موجود");
 
   if (status === "RETURNED" && !extra?.returnReason?.trim()) {
     throw new Error("لازم تكتب سبب الإرجاع");
@@ -228,35 +251,108 @@ async function updateOrderStatusInner(
   if (status === "DELIVERED" && extra?.collectionStatus === "COLLECTED" && (extra?.collectedAmount === undefined || extra.collectedAmount < 0)) {
     throw new Error("لازم تدخل المبلغ المحصّل");
   }
-
-  const payload: any = { status, updatedAt: new Date() };
-  if (status === "DELIVERED") {
-    payload.collectionStatus = extra?.collectionStatus;
-    payload.collectedAmount = extra?.collectionStatus === "COLLECTED" ? (extra?.collectedAmount ?? 0).toFixed(2) : null;
-    payload.deliveredById = session.userId;
-    payload.deliveredAt = new Date();
-  }
-  if (status === "RETURNED") {
-    payload.returnReason = extra?.returnReason?.trim();
+  if (status === "DELIVERED" && extra?.collectionStatus === "COLLECTED" && Number(extra.collectedAmount) > 0 && !extra?.paymentMethodId) {
+    // قبل كده تحصيل الأوردر كان مجرد رقم بيتسجل على الأوردر نفسه وخلاص - مبيدخلش الخزينة ولا فاتورة
+    // ولا أي تقرير مالي، يعني فلوس حقيقية بتتحصّل من غير أي أثر محاسبي. دلوقتي لازم تحدد طريقة
+    // التحصيل عشان تدخل فعليًا في خزينة حقيقية.
+    throw new Error("لازم تحدد طريقة التحصيل (كاش/فودافون كاش/إلخ) عشان المبلغ يدخل الخزينة");
   }
 
-  if (status === "RETURNED" && before.status !== "RETURNED") {
-    // رجّع الأصناف للمخزون تلقائيًا
-    const items = await db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, orderId));
-    await db.transaction(async (tx) => {
-      for (const item of items) {
-        if (before.locationId) await adjustStock(tx, item.productId, before.locationId, item.quantity);
+  let before: any = null;
+  await db.transaction(async (tx) => {
+    // قفل صف الأوردر الأول - يمنع اتنين يغيروا حالة نفس الأوردر في نفس اللحظة، ويضمن إننا بنشوف
+    // آخر حالة فعلية قبل ما نتأكد إن الانتقال مسموح بيه
+    const [order] = await tx.select().from(schema.orders).where(eq(schema.orders.id, orderId)).for("update");
+    if (!order) throw new Error("الأوردر غير موجود");
+    before = order;
+
+    if (order.status !== status) {
+      const allowed = ORDER_STATUS_TRANSITIONS[order.status] || [];
+      if (!allowed.includes(status)) {
+        throw new Error(`متقدرش تغيّر حالة الأوردر من "${order.status}" لـ"${status}" مباشرة - ده مش خط سير منطقي (وممكن يرصد المخزون غلط)`);
       }
-      await tx.update(schema.orders).set(payload).where(eq(schema.orders.id, orderId));
-    });
-  } else {
-    await db.update(schema.orders).set(payload).where(eq(schema.orders.id, orderId));
-  }
+    }
+
+    const payload: any = { status, updatedAt: new Date() };
+    if (status === "DELIVERED") {
+      payload.collectionStatus = extra?.collectionStatus;
+      payload.collectedAmount = extra?.collectionStatus === "COLLECTED" ? (extra?.collectedAmount ?? 0).toFixed(2) : null;
+      payload.deliveredById = session.userId;
+      payload.deliveredAt = new Date();
+
+      // ربط تحصيل الأوردر فعليًا بالخزينة والتقارير - بس أول مرة (لو الأوردر لسه مالوش فاتورة مرتبطة
+      // بيه) عشان لو حد أعاد تأكيد "تم التسليم" لأوردر متسلّم بالفعل (لتصحيح المبلغ مثلًا) منعملش
+      // إدخال خزينة أو فاتورة تانية مكررة.
+      const collectedAmt = Number(extra?.collectedAmount || 0);
+      if (extra?.collectionStatus === "COLLECTED" && collectedAmt > 0 && extra?.paymentMethodId && !order.invoiceId) {
+        const orderItems = await tx.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, orderId));
+        const productIds = orderItems.map((i) => i.productId);
+        const prods = productIds.length ? await tx.select().from(schema.products).where(inArray(schema.products.id, productIds)) : [];
+        const prodMap = new Map(prods.map((p) => [p.id, p]));
+        const referenceTotal = orderItems.reduce((s, i) => s + i.quantity * Number(prodMap.get(i.productId)?.retailPrice || 0), 0);
+        const scale = referenceTotal > 0 ? collectedAmt / referenceTotal : 0;
+
+        const invCode = genCode("INV");
+        const [invoice] = await tx
+          .insert(schema.salesInvoices)
+          .values({
+            code: invCode,
+            customerId: order.customerId,
+            locationId: order.locationId!,
+            subtotal: collectedAmt.toFixed(2),
+            discount: "0.00",
+            total: collectedAmt.toFixed(2),
+            paidAmount: collectedAmt.toFixed(2),
+            paymentStatus: "PAID",
+            paymentMethodId: extra.paymentMethodId,
+            source: order.source,
+            notes: `فاتورة تلقائية عند تسليم/تحصيل الأوردر ${order.code}`,
+            createdById: session.userId,
+            soldById: order.createdById,
+          })
+          .returning();
+        for (const item of orderItems) {
+          const product = prodMap.get(item.productId);
+          const unitPrice = referenceTotal > 0 ? Number(product?.retailPrice || 0) * scale : orderItems.length > 0 ? collectedAmt / orderItems.reduce((s, i) => s + i.quantity, 0) : 0;
+          await tx.insert(schema.salesInvoiceItems).values({
+            invoiceId: invoice.id,
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPrice: unitPrice.toFixed(2),
+            unitCost: product?.avgCost || "0",
+          });
+        }
+        payload.invoiceId = invoice.id;
+
+        await postCashByPaymentMethod(tx, extra.paymentMethodId, "SALE_IN", collectedAmt, {
+          note: `تحصيل أوردر توصيل ${order.code}`,
+          refType: "Order",
+          refId: orderId,
+          createdById: session.userId,
+        });
+      }
+    }
+    if (status === "RETURNED") {
+      payload.returnReason = extra?.returnReason?.trim();
+    }
+
+    if (status === "RETURNED" && order.status !== "RETURNED") {
+      // رجّع الأصناف للمخزون تلقائيًا
+      const items = await tx.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, orderId));
+      for (const item of items) {
+        if (order.locationId) await adjustStock(tx, item.productId, order.locationId, item.quantity);
+      }
+    }
+    await tx.update(schema.orders).set(payload).where(eq(schema.orders.id, orderId));
+  });
 
   const [order] = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId));
   await logAudit({ action: "UPDATE", entityType: "Order", entityId: orderId, before, after: order });
   revalidatePath("/orders");
   revalidatePath("/products");
+  revalidatePath("/cash");
+  revalidatePath("/sales");
+  revalidatePath("/");
   return order;
 }
 

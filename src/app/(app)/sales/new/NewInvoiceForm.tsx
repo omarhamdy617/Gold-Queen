@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { isActionError } from "@/lib/actionError";
+import ProductSearchSelect from "@/components/ProductSearchSelect";
 
 type Line = { productId: string; quantity: string; unitPrice: string; serials: string };
 
@@ -53,6 +54,14 @@ export default function NewInvoiceForm({ products, locations, customers: initial
       setError("اختار المحل أو المخزن اللي هيتباع منه");
       return;
     }
+    // قبل كده الإجمالي المعروض على الشاشة كان بيتحسب بـ parseFloat (بيقبل كسور زي 2.5) بينما
+    // القيمة الفعلية اللي بتتبعت للسيرفر كانت بـ parseInt (بيقطع الكسر - 2.5 بتبقى 2) - يعني
+    // الكاشير ممكن يشوف إجمالي محسوب على كمية 2.5 بينما الفاتورة المسجلة فعليًا بكمية 2 بس.
+    const nonIntegerLine = validLines.find((l) => !Number.isInteger(parseFloat(l.quantity)));
+    if (nonIntegerLine) {
+      setError("الكمية لازم تكون رقم صحيح (بدون كسور) لكل صنف - الوحدات هنا قطع كاملة مش كسور");
+      return;
+    }
     start(async () => {
       try {
         const paid = paymentStatus === "PAID" ? total : paymentStatus === "PARTIAL" ? parseFloat(paidAmount) || 0 : 0;
@@ -64,7 +73,7 @@ export default function NewInvoiceForm({ products, locations, customers: initial
           locationId,
           items: validLines.map((l) => ({
             productId: l.productId,
-            quantity: parseInt(l.quantity),
+            quantity: Math.round(parseFloat(l.quantity)),
             unitPrice: parseFloat(l.unitPrice) || 0,
             serials: l.serials ? l.serials.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
           })),
@@ -128,10 +137,14 @@ export default function NewInvoiceForm({ products, locations, customers: initial
           const lineTotal = (parseFloat(line.quantity) || 0) * (parseFloat(line.unitPrice) || 0);
           return (
             <div key={idx} className="grid sm:grid-cols-7 gap-2 items-center">
-              <select value={line.productId} onChange={(e) => selectProduct(idx, e.target.value)} className="border rounded px-2 py-1.5 text-sm sm:col-span-2">
-                <option value="">اختر منتج</option>
-                {products.map((p: any) => <option key={p.id} value={p.id}>{p.name} (متاح: {p.totalStock})</option>)}
-              </select>
+              <div className="sm:col-span-2">
+                <ProductSearchSelect
+                  products={products}
+                  value={line.productId}
+                  onChange={(productId) => selectProduct(idx, productId)}
+                  locationId={locationId}
+                />
+              </div>
               <input type="number" min="1" placeholder="الكمية" value={line.quantity} onChange={(e) => setLine(idx, { quantity: e.target.value })} className="border rounded px-2 py-1.5 text-sm" />
               <input type="number" step="0.01" placeholder="السعر" value={line.unitPrice} onChange={(e) => setLine(idx, { unitPrice: e.target.value })} className="border rounded px-2 py-1.5 text-sm" />
               {product?.requiresSerial ? (

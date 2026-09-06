@@ -1,6 +1,7 @@
 import { listOrders, listCouriers, listShippingCompanies, getOrderStats } from "@/actions/orders";
 import { listProductsWithStock, listLocations } from "@/actions/products";
 import { listCustomers } from "@/actions/customers";
+import { listPaymentMethods } from "@/actions/cash";
 import { can } from "@/lib/auth";
 import { dateAr, money } from "@/lib/format";
 import OrderForm from "./OrderForm";
@@ -11,7 +12,7 @@ import Link from "next/link";
 
 export default async function OrdersPage() {
   const canShip = await can("orders.ship");
-  const [orders, products, customers, couriers, shippingCompanies, locations, stats] = await Promise.all([
+  const [orders, products, customers, couriers, shippingCompanies, locations, stats, paymentMethods] = await Promise.all([
     listOrders(),
     listProductsWithStock(),
     listCustomers(),
@@ -19,6 +20,7 @@ export default async function OrdersPage() {
     canShip ? listShippingCompanies() : Promise.resolve([]),
     listLocations(),
     getOrderStats(),
+    listPaymentMethods(),
   ]);
   return (
     <div className="space-y-6">
@@ -55,7 +57,7 @@ export default async function OrdersPage() {
                 <td>{sourceLabel(o.source)}</td>
                 <td className="text-xs">{o.shippingMethod ? `${shipLabel(o.shippingMethod)} - ${o.courierName || o.shippingCompanyName || ""}` : "-"}</td>
                 <td>{o.prepaid ? "نعم" : "لا"}</td>
-                <td><StatusControl orderId={o.id} status={o.status} canEdit={canShip} customerPhone={o.customerPhone} /></td>
+                <td><StatusControl orderId={o.id} status={o.status} canEdit={canShip} customerPhone={o.customerPhone} paymentMethods={paymentMethods} /></td>
                 <td className="text-xs">{dateAr(o.createdAt)}</td>
                 {canShip && (
                   <td className="p-2">

@@ -15,6 +15,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/orders", label: "الأوردرات والشحن", perm: "orders.manage", icon: "🚚" },
   { href: "/returns", label: "المرتجعات", perm: "returns.create", icon: "↩️" },
   { href: "/cash", label: "الخزائن", perm: "cash.view", icon: "💰" },
+  { href: "/loans", label: "السلف", perm: "loans.manage", icon: "🤝" },
   { href: "/expenses", label: "المصروفات", perm: "expenses.manage", icon: "💸" },
   { href: "/finance", label: "الوضع المالي", perm: "finance.view", icon: "📈" },
   { href: "/reports", label: "الأكثر مبيعًا", perm: "reports.view", icon: "🏆" },

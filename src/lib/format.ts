@@ -10,5 +10,8 @@ export function num(n: number | string) {
 
 export function dateAr(d: Date | string) {
   const date = typeof d === "string" ? new Date(d) : d;
-  return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" }).format(date);
+  // من غير timeZone صريح، Intl.DateTimeFormat بيستخدم توقيت السيرفر (UTC على Vercel) - يعني وقت
+  // حركة حصلت الساعة 1 بالليل بتوقيت القاهرة كان بيتعرض بتوقيت متأخر عنه بساعتين (أو 3 وقت التوقيت
+  // الصيفي)، فبيبان وكأنها حصلت في وقت مختلف تمامًا عن الوقت الفعلي في مصر
+  return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Cairo" }).format(date);
 }

@@ -2,7 +2,8 @@
 import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit } from "@/lib/auth";
-import { postCashByPaymentMethod } from "@/lib/ops";
+import { postCashByPaymentMethod, transferBetweenDrawers } from "@/lib/ops";
+import { toActionError } from "@/lib/actionError";
 import { revalidatePath } from "next/cache";
 
 export async function listCashDrawers() {
@@ -70,6 +71,23 @@ export async function getCashTransaction(id: string) {
   const [d] = await db.select().from(schema.cashDrawers).where(eq(schema.cashDrawers.id, tx.drawerId));
   drawerName = d?.name;
   return { ...tx, createdByName, drawerName };
+}
+
+// تحويل مبلغ بين خزينتين (مثلًا من الكاش لمحفظة إلكترونية) - قبل كده مكانش موجود أي إجراء لده
+// خالص رغم إن أنواع الحركة TRANSFER_IN/TRANSFER_OUT كانت معرّفة في enum من زمان من غير استخدام،
+// فكان أي تحويل فعلي بين خزينتين بيتسجل يدويًا بتسويتين منفصلتين (ADJUSTMENT) بيفقد الربط بينهم.
+export async function transferCash(fromPaymentMethodId: string, toPaymentMethodId: string, amount: number, note?: string) {
+  try {
+    await requirePermission("cash.transfer");
+    const session = await requireSession();
+    await db.transaction(async (tx) => {
+      await transferBetweenDrawers(tx, fromPaymentMethodId, toPaymentMethodId, amount, { note, createdById: session.userId });
+    });
+    await logAudit({ action: "TRANSFER", entityType: "CashDrawer", entityId: fromPaymentMethodId, after: { toPaymentMethodId, amount, note } });
+    revalidatePath("/cash");
+  } catch (e) {
+    return toActionError(e, "تعذر تنفيذ التحويل");
+  }
 }
 
 export async function listPaymentMethods() {

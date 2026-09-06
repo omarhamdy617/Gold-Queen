@@ -6,6 +6,7 @@ import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } fr
 import { EGYPT_GOVERNORATES } from "@/lib/governorates";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { isActionError } from "@/lib/actionError";
+import ProductSearchSelect from "@/components/ProductSearchSelect";
 
 export default function OrderForm({ products, customers: initialCustomers, locations }: any) {
   const [customers] = useState<SimpleCustomer[]>(initialCustomers);
@@ -110,10 +111,11 @@ export default function OrderForm({ products, customers: initialCustomers, locat
         <div className="text-xs font-semibold text-muted uppercase tracking-wide">الأصناف</div>
         {lines.map((line, idx) => (
           <div key={idx} className="grid sm:grid-cols-2 gap-2">
-            <select value={line.productId} onChange={(e) => { const next = [...lines]; next[idx].productId = e.target.value; setLines(next); }} className="border rounded px-2 py-1.5 text-sm">
-              <option value="">اختر منتج</option>
-              {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <ProductSearchSelect
+              products={products}
+              value={line.productId}
+              onChange={(productId) => { const next = [...lines]; next[idx].productId = productId; setLines(next); }}
+            />
             <input type="number" placeholder="الكمية" value={line.quantity} onChange={(e) => { const next = [...lines]; next[idx].quantity = e.target.value; setLines(next); }} className="border rounded px-2 py-1.5 text-sm" />
           </div>
         ))}

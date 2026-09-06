@@ -20,6 +20,21 @@ export async function GET(req: NextRequest) {
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
+
+    // تنظيف تلقائي: كل تشغيل كان بيعمل ملف جديد للأبد من غير ما يمسح القديم - يعني تخزين Supabase
+    // بيتملى تدريجيًا لحد ما يوصل للحد المسموح بيه ويبدأ يرفض أي رفع جديد (حتى النسخ الاحتياطية
+    // الجديدة). دلوقتي بنسيب آخر 45 نسخة بس (تقريبًا 45 يوم لو التشغيل يومي) ونمسح الباقي.
+    const KEEP_LATEST = 45;
+    try {
+      const { data: files } = await supabase.storage.from("backups").list("", { limit: 1000, sortBy: { column: "name", order: "desc" } });
+      if (files && files.length > KEEP_LATEST) {
+        const toDelete = files.slice(KEEP_LATEST).map((f) => f.name);
+        if (toDelete.length) await supabase.storage.from("backups").remove(toDelete);
+      }
+    } catch {
+      // فشل التنظيف مايوقفش نجاح النسخة الاحتياطية نفسها - هيتحاول تاني بكرة
+    }
+
     return NextResponse.json({ ok: true, storedAs: filename });
   }
 

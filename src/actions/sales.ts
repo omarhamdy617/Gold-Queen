@@ -1,9 +1,10 @@
 "use server";
 import { db, schema } from "@/db";
-import { eq, and, desc } from "drizzle-orm";
-import { requirePermission, requireSession, logAudit, genCode, can } from "@/lib/auth";
+import { eq, and, desc, inArray, or, ilike } from "drizzle-orm";
+import { requirePermission, requireSession, logAudit, genCode, can, isCallerAdmin } from "@/lib/auth";
 import { postCashByPaymentMethod, adjustStock, updateCustomerBalance, checkCreditLimit, stockShortageMessage } from "@/lib/ops";
 import { toActionError } from "@/lib/actionError";
+import { normalizePhone } from "@/lib/phone";
 import { revalidatePath } from "next/cache";
 
 type InvoiceInput = {
@@ -37,12 +38,37 @@ async function createSalesInvoiceInner(input: InvoiceInput) {
   if (!input.items || input.items.length === 0) {
     throw new Error("لازم تضيف صنف واحد على الأقل في الفاتورة قبل الحفظ");
   }
+  // تحقق من صحة كل سطر - قبل كده كان ممكن تتسجل كمية أو سعر سالب من الشاشة من غير ما السيرفر يرفضها،
+  // وده كان بيزوّد المخزون بدل ما يقلله وممكن يخلي إجمالي الفاتورة سالب.
+  for (const it of input.items) {
+    if (!it.productId) throw new Error("فيه سطر صنف لسه ماتحددش");
+    if (!Number.isFinite(it.quantity) || it.quantity <= 0) throw new Error("الكمية لازم تكون رقم أكبر من صفر لكل صنف في الفاتورة");
+    if (!Number.isFinite(it.unitPrice) || it.unitPrice < 0) throw new Error("السعر لازم يكون رقم صحيح (مش سالب) لكل صنف في الفاتورة");
+  }
+  if (!Number.isFinite(input.discount) || input.discount < 0) throw new Error("قيمة الخصم لازم تكون رقم صحيح (مش سالب)");
+  if (!Number.isFinite(input.paidAmount) || input.paidAmount < 0) throw new Error("المبلغ المدفوع لازم يكون رقم صحيح (مش سالب)");
 
   const products = await db.select().from(schema.products);
   const productMap = new Map(products.map((p) => [p.id, p]));
 
+  // أقل سعر بيع مسموح لكل منتج (لو متحدد) - بيتطبق على كل الموظفين ما عدا الأدمن الكامل، اللي
+  // يقدر يحط أي سعر حتى لو صفر. ده بيقفل ثغرة تعديل سعر السطر مباشرة (بدل خانة الخصم) للتحايل
+  // على صلاحية "منح خصم كبير" - قبل كده كان ممكن تنزّل سعر الوحدة لأي رقم وإجمالي الفاتورة ينزل
+  // معاه من غير ما خانة الخصم تتحرك خالص فمتقاعدتش أي تحقق.
+  const isAdmin = await isCallerAdmin();
+  if (!isAdmin) {
+    for (const it of input.items) {
+      const product = productMap.get(it.productId);
+      const minPrice = product?.minSellingPrice !== null && product?.minSellingPrice !== undefined ? Number(product.minSellingPrice) : null;
+      if (minPrice !== null && it.unitPrice < minPrice) {
+        throw new Error(`السعر اللي حاطه لـ"${product?.name || "المنتج"}" (${it.unitPrice}) أقل من أقل سعر بيع مسموح (${minPrice}) - محتاج صلاحية أدمن عشان تبيع بسعر أقل من كده`);
+      }
+    }
+  }
+
   const subtotal = input.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
   const total = subtotal - input.discount;
+  if (total < 0) throw new Error("الخصم أكبر من إجمالي الفاتورة - راجع القيم");
 
   // خصم أكبر من 10% من إجمالي الفاتورة يحتاج صلاحية خاصة
   if (subtotal > 0 && input.discount / subtotal > 0.1) {
@@ -55,7 +81,7 @@ async function createSalesInvoiceInner(input: InvoiceInput) {
     // بنفس أسلوب تسجيل الأوردرات: لو الرقم مسجل قبل كده بنربط بنفس العميل، ولو رقم جديد بنسجله عميل جديد أوتوماتيك
     let customerId = input.customerId;
     if (!customerId && (input.customerName?.trim() || input.customerPhone?.trim())) {
-      const phone = input.customerPhone?.trim();
+      const phone = input.customerPhone?.trim() ? normalizePhone(input.customerPhone.trim()) : undefined;
       if (phone) {
         const [existing] = await tx.select().from(schema.customers).where(eq(schema.customers.phone, phone)).for("update");
         if (existing) {
@@ -105,12 +131,20 @@ async function createSalesInvoiceInner(input: InvoiceInput) {
         source: input.source,
         notes: input.notes || undefined,
         createdById: session.userId,
+        // في الفواتير العادية البايع الفعلي هو نفسه اللي سجّل الفاتورة - بيختلف بس في حالة "بيع من
+        // عهدة الموظف" (شوف sellFromConsignment في actions/consignments.ts) اللي بتحدد soldById بنفسها بعد الإنشاء
+        soldById: session.userId,
       })
       .returning();
 
     for (const item of input.items) {
       const product = productMap.get(item.productId);
-      if (!product) continue;
+      if (!product) {
+        // قبل كده كان بيتجاهل السطر ده تمامًا (continue) بينما subtotal/total اتحسبوا بالفعل
+        // وهما شاملين قيمة السطر ده - يعني العميل يتحمّل مبلغ سطر منتج مالوش وجود في الفاتورة
+        // النهائية خالص، من غير أي أثر أو تفسير. دلوقتي برفض العملية كلها بدل ما نسيب فاتورة ناقصة.
+        throw new Error("فيه سطر بمنتج غير موجود في قاعدة البيانات - يمكن اتمسح بعد ما فتحت شاشة البيع. حدّث الصفحة وحاول تاني");
+      }
       const [ii] = await tx
         .insert(schema.salesInvoiceItems)
         .values({
@@ -165,6 +199,9 @@ async function createSalesInvoiceInner(input: InvoiceInput) {
 
 export async function listInvoices(search?: string) {
   await requirePermission("sales.view");
+  // قبل كده كانت الباراميتر دي متعرّفة بس مش مستخدمة خالص في جسم الاستعلام - أي بحث في الشاشة كان
+  // بيرجع نفس آخر 300 فاتورة زي ما هي من غير أي فلترة فعلية، وأصلًا مفيش شاشة بحث بتستخدمها
+  const trimmed = search?.trim();
   const rows = await db
     .select({
       id: schema.salesInvoices.id,
@@ -178,6 +215,11 @@ export async function listInvoices(search?: string) {
     })
     .from(schema.salesInvoices)
     .leftJoin(schema.customers, eq(schema.salesInvoices.customerId, schema.customers.id))
+    .where(
+      trimmed
+        ? or(ilike(schema.salesInvoices.code, `%${trimmed}%`), ilike(schema.customers.name, `%${trimmed}%`), ilike(schema.customers.phone, `%${trimmed}%`))
+        : undefined
+    )
     .orderBy(desc(schema.salesInvoices.createdAt))
     .limit(300);
   return rows;
@@ -220,13 +262,30 @@ export async function deleteSalesInvoice(id: string) {
 async function deleteSalesInvoiceInner(id: string) {
   await requirePermission("sales.edit_old");
   const session = await requireSession();
-  const [invoice] = await db.select().from(schema.salesInvoices).where(eq(schema.salesInvoices.id, id));
-  if (!invoice) throw new Error("الفاتورة غير موجودة");
-  const items = await db.select().from(schema.salesInvoiceItems).where(eq(schema.salesInvoiceItems.invoiceId, id));
+  let invoiceForAudit: any = null;
 
   await db.transaction(async (tx) => {
+    // قفل صف الفاتورة الأول جوه المعاملة عشان لو حد ضغط "حذف" مرتين قريب من بعض، المحاولة التانية
+    // تستنى لحد ما الأولى تخلص وتلاقي الفاتورة اتمسحت بالفعل فتترفض - بدل ما تعكس نفس الأثر مرتين
+    // (رجوع مخزون مرتين، وفلوس زيادة في الخزينة "كأنها اتردت" مرتين).
+    const [invoice] = await tx.select().from(schema.salesInvoices).where(eq(schema.salesInvoices.id, id)).for("update");
+    if (!invoice) throw new Error("الفاتورة غير موجودة (يمكن اتمسحت بالفعل)");
+    invoiceForAudit = invoice;
+    const items = await tx.select().from(schema.salesInvoiceItems).where(eq(schema.salesInvoiceItems.invoiceId, id));
+
     for (const item of items) {
       await adjustStock(tx, item.productId, invoice.locationId, item.quantity);
+    }
+    // رجّع أي سيريالات اتباعت في الفاتورة دي لحالة "متاح" تاني - قبل كده كانت فاضلة متسجلة "مباع"
+    // للأبد حتى لو الفاتورة اتمسحت، فبحث السيريال كان بيقول "متسجل قبل كده كمباع" غلط.
+    const itemIds = items.map((i) => i.id);
+    if (itemIds.length) {
+      for (const itemId of itemIds) {
+        await tx
+          .update(schema.productSerials)
+          .set({ status: "IN_STOCK", soldAt: null, invoiceItemId: null, warrantyStart: null, locationId: invoice.locationId })
+          .where(eq(schema.productSerials.invoiceItemId, itemId));
+      }
     }
     if (invoice.customerId) {
       const unpaid = Number(invoice.total) - Number(invoice.paidAmount);
@@ -245,7 +304,7 @@ async function deleteSalesInvoiceInner(id: string) {
     await tx.delete(schema.salesInvoices).where(eq(schema.salesInvoices.id, id));
   });
 
-  await logAudit({ action: "DELETE", entityType: "SalesInvoice", entityId: id, before: invoice });
+  await logAudit({ action: "DELETE", entityType: "SalesInvoice", entityId: id, before: invoiceForAudit });
   revalidatePath("/sales");
   revalidatePath("/products");
   revalidatePath("/cash");
@@ -279,10 +338,42 @@ export async function createQuote(input: QuoteInput) {
 
 async function createQuoteInner(input: QuoteInput) {
   await requirePermission("quotes.manage");
+  // قبل كده عرض السعر كان مقبول من غير أي أصناف، ومن غير حد أقصى لنسبة الخصم (ممكن تحط 150%) -
+  // على عكس فاتورة البيع اللي فيها نفس الحماية دي بالظبط.
+  if (!input.items || input.items.length === 0) throw new Error("لازم تضيف صنف واحد على الأقل في عرض السعر قبل الحفظ");
+  for (const it of input.items) {
+    if (!it.productId) throw new Error("فيه سطر صنف لسه ماتحددش");
+    if (!Number.isFinite(it.quantity) || it.quantity <= 0) throw new Error("الكمية لازم تكون رقم أكبر من صفر لكل صنف");
+    if (!Number.isFinite(it.unitPrice) || it.unitPrice < 0) throw new Error("السعر لازم يكون رقم صحيح (مش سالب) لكل صنف");
+  }
+  // نفس حماية أقل سعر بيع الموجودة في فاتورة البيع بالظبط - عرض السعر لازم يلتزم بنفس الحد الأدنى
+  const isAdminQuote = await isCallerAdmin();
+  if (!isAdminQuote) {
+    const productsForQuote = await db.select().from(schema.products).where(inArray(schema.products.id, input.items.map((i) => i.productId)));
+    const minPriceMap = new Map(productsForQuote.map((p) => [p.id, p]));
+    for (const it of input.items) {
+      const product = minPriceMap.get(it.productId);
+      const minPrice = product?.minSellingPrice !== null && product?.minSellingPrice !== undefined ? Number(product.minSellingPrice) : null;
+      if (minPrice !== null && it.unitPrice < minPrice) {
+        throw new Error(`السعر اللي حاطه لـ"${product?.name || "المنتج"}" (${it.unitPrice}) أقل من أقل سعر بيع مسموح (${minPrice}) - محتاج صلاحية أدمن`);
+      }
+    }
+  }
+  if (input.discountPct !== undefined && input.discountPct !== null && (input.discountPct < 0 || input.discountPct > 100)) {
+    throw new Error("نسبة الخصم لازم تكون بين 0% و 100%");
+  }
   const subtotal = input.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+  if (input.discountAmt !== undefined && input.discountAmt !== null && (input.discountAmt < 0 || input.discountAmt > subtotal)) {
+    throw new Error("قيمة الخصم لازم تكون رقم موجب وأقل من أو يساوي إجمالي عرض السعر");
+  }
   let afterDiscount = subtotal;
   if (input.discountPct) afterDiscount -= subtotal * (input.discountPct / 100);
   if (input.discountAmt) afterDiscount -= input.discountAmt;
+  // نفس قاعدة الخصم الكبير في فاتورة البيع: خصم أكبر من 10% محتاج صلاحية خاصة
+  if (subtotal > 0 && (subtotal - afterDiscount) / subtotal > 0.1) {
+    const allowed = await can("sales.discount.large");
+    if (!allowed) throw new Error("الخصم اللي حاطه أكبر من المسموح - محتاج صلاحية \"منح خصم كبير\"");
+  }
   const vatAmount = input.vatEnabled && input.vatRate ? afterDiscount * (input.vatRate / 100) : 0;
   const total = afterDiscount + vatAmount;
 
@@ -290,7 +381,7 @@ async function createQuoteInner(input: QuoteInput) {
     // ربط/إنشاء العميل تلقائيًا بالهاتف - بنفس أسلوب فاتورة البيع والأوردر
     let customerId = input.customerId;
     if (!customerId && (input.customerName?.trim() || input.customerPhone?.trim())) {
-      const phone = input.customerPhone?.trim();
+      const phone = input.customerPhone?.trim() ? normalizePhone(input.customerPhone.trim()) : undefined;
       if (phone) {
         const [existing] = await tx.select().from(schema.customers).where(eq(schema.customers.phone, phone)).for("update");
         if (existing) {

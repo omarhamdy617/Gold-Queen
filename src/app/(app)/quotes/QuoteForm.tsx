@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { isActionError } from "@/lib/actionError";
+import ProductSearchSelect from "@/components/ProductSearchSelect";
 
 export default function QuoteForm({ products, customers: initialCustomers, templates }: any) {
   const [customers] = useState<SimpleCustomer[]>(initialCustomers);
@@ -44,13 +45,16 @@ export default function QuoteForm({ products, customers: initialCustomers, templ
 
       {lines.map((line, idx) => (
         <div key={idx} className="grid sm:grid-cols-4 gap-2">
-          <select value={line.productId} onChange={(e) => {
-            const p = products.find((p: any) => p.id === e.target.value);
-            const next = [...lines]; next[idx] = { ...next[idx], productId: e.target.value, unitPrice: p?.retailPrice || "" }; setLines(next);
-          }} className="border rounded px-2 py-1.5 text-sm sm:col-span-2">
-            <option value="">اختر منتج</option>
-            {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          <div className="sm:col-span-2">
+            <ProductSearchSelect
+              products={products}
+              value={line.productId}
+              onChange={(productId) => {
+                const p = products.find((p: any) => p.id === productId);
+                const next = [...lines]; next[idx] = { ...next[idx], productId, unitPrice: p?.retailPrice || "" }; setLines(next);
+              }}
+            />
+          </div>
           <input type="number" placeholder="الكمية" value={line.quantity} onChange={(e) => {
             const next = [...lines]; next[idx].quantity = e.target.value; setLines(next);
           }} className="border rounded px-2 py-1.5 text-sm" />
@@ -80,13 +84,19 @@ export default function QuoteForm({ products, customers: initialCustomers, templ
             disabled={pending}
             onClick={() => start(async () => {
               setError("");
+              // نفس مشكلة فاتورة البيع بالظبط: الإجمالي المعروض بيتحسب بـ parseFloat (بيقبل كسور)
+              // بينما كان بيتبعت للسيرفر بـ parseInt (بيقطع الكسر) - ممكن يفرق الإجمالي المعروض عن
+              // الكمية الفعلية المسجلة في عرض السعر
+              const validLines = lines.filter((l) => l.productId && l.quantity);
+              const nonInteger = validLines.find((l) => !Number.isInteger(parseFloat(l.quantity)));
+              if (nonInteger) { setError("الكمية لازم تكون رقم صحيح (بدون كسور) لكل صنف"); return; }
               try {
                 const q = await createQuote({
                   customerId: customerId || undefined,
                   customerName: customerName || undefined,
                   customerPhone: customerPhone || undefined,
                   customerType: !customerId ? customerField.type : undefined,
-                  items: lines.filter((l) => l.productId && l.quantity).map((l) => ({ productId: l.productId, quantity: parseInt(l.quantity), unitPrice: parseFloat(l.unitPrice) || 0 })),
+                  items: validLines.map((l) => ({ productId: l.productId, quantity: Math.round(parseFloat(l.quantity)), unitPrice: parseFloat(l.unitPrice) || 0 })),
                   discountPct: discountPct ? parseFloat(discountPct) : undefined,
                   discountAmt: discountAmt ? parseFloat(discountAmt) : undefined,
                   vatEnabled,

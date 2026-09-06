@@ -2,12 +2,15 @@
 import { useEffect, useState, useTransition } from "react";
 import { getRolePermissions, getUserPermissionOverrides, setRolePermission, setUserPermissionOverride } from "@/actions/settings";
 import { PERMISSION_GROUPS } from "@/lib/permissions";
+import { isActionError } from "@/lib/actionError";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function PermissionEditor({ userId, roleId, roleName }: { userId: string; roleId: string; roleName: string }) {
   const [pending, start] = useTransition();
   const [rolePerms, setRolePerms] = useState<Record<string, boolean>>({});
   const [userOverrides, setUserOverrides] = useState<Record<string, boolean>>({});
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -21,20 +24,32 @@ export default function PermissionEditor({ userId, roleId, roleName }: { userId:
 
   function toggleEmployeePermission(key: string, checked: boolean) {
     // تحديد صلاحية هذا الموظف بالذات - override فردي، من غير ما يأثر على باقي زمايله في نفس الدور
+    setError("");
     start(async () => {
-      await setUserPermissionOverride(userId, key, checked);
-      setUserOverrides((prev) => ({ ...prev, [key]: checked }));
+      try {
+        const r = await setUserPermissionOverride(userId, key, checked);
+        if (isActionError(r)) { setError(r.error); return; }
+        setUserOverrides((prev) => ({ ...prev, [key]: checked }));
+      } catch (e: any) {
+        setError(friendlyErrorMessage(e, "تعذر حفظ الصلاحية"));
+      }
     });
   }
 
   function resetToRoleDefault(key: string) {
+    setError("");
     start(async () => {
-      await setUserPermissionOverride(userId, key, null);
-      setUserOverrides((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
+      try {
+        const r = await setUserPermissionOverride(userId, key, null);
+        if (isActionError(r)) { setError(r.error); return; }
+        setUserOverrides((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      } catch (e: any) {
+        setError(friendlyErrorMessage(e, "تعذر حفظ الصلاحية"));
+      }
     });
   }
 
@@ -48,6 +63,7 @@ export default function PermissionEditor({ userId, roleId, roleName }: { userId:
           {showAdvanced ? "إخفاء إعدادات الدور المتقدمة" : "تعديل الصلاحية الافتراضية لكل الدور (متقدم)"}
         </button>
       </div>
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-2 text-xs">{error}</div>}
 
       {PERMISSION_GROUPS.map((g) => (
         <div key={g.group} className="app-card p-3">
@@ -81,10 +97,18 @@ export default function PermissionEditor({ userId, roleId, roleName }: { userId:
                           type="checkbox"
                           checked={roleAllow}
                           disabled={pending}
-                          onChange={(e) => start(async () => {
-                            await setRolePermission(roleId, p.key, e.target.checked);
-                            setRolePerms((prev) => ({ ...prev, [p.key]: e.target.checked }));
-                          })}
+                          onChange={(e) => {
+                            setError("");
+                            start(async () => {
+                              try {
+                                const r = await setRolePermission(roleId, p.key, e.target.checked);
+                                if (isActionError(r)) { setError(r.error); return; }
+                                setRolePerms((prev) => ({ ...prev, [p.key]: e.target.checked }));
+                              } catch (err: any) {
+                                setError(friendlyErrorMessage(err, "تعذر حفظ الصلاحية"));
+                              }
+                            });
+                          }}
                         />
                         كل الدور
                       </label>

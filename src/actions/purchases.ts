@@ -2,7 +2,7 @@
 import { db, schema } from "@/db";
 import { eq, desc, ilike, or } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit, genCode, can } from "@/lib/auth";
-import { postCashByPaymentMethod, adjustStock, updateSupplierBalance, updateWeightedAvgCost } from "@/lib/ops";
+import { postCashByPaymentMethod, adjustStock, updateSupplierBalance, updateWeightedAvgCost, reverseWeightedAvgCost } from "@/lib/ops";
 import { toActionError } from "@/lib/actionError";
 import { revalidatePath } from "next/cache";
 
@@ -236,15 +236,29 @@ export async function deletePurchase(id: string) {
 async function deletePurchaseInner(id: string) {
   await requirePermission("purchases.edit");
   const session = await requireSession();
-  const [purchase] = await db.select().from(schema.purchases).where(eq(schema.purchases.id, id));
-  if (!purchase) throw new Error("فاتورة الشراء غير موجودة");
-  const items = await db.select().from(schema.purchaseItems).where(eq(schema.purchaseItems.purchaseId, id));
+  let purchaseForAudit: any = null;
 
   await db.transaction(async (tx) => {
+    // قفل صف فاتورة الشراء الأول جوه المعاملة - يمنع حذفها مرتين لو اتنين ضغطوا "حذف" قريب من بعض:
+    // المحاولة التانية هتستنى وهتلاقي الفاتورة اتمسحت بالفعل فهتترفض بدل ما تنقص المخزون وتزوّد الخزينة مرتين.
+    const [purchase] = await tx.select().from(schema.purchases).where(eq(schema.purchases.id, id)).for("update");
+    if (!purchase) throw new Error("فاتورة الشراء غير موجودة (يمكن اتمسحت بالفعل)");
+    purchaseForAudit = purchase;
+    const items = await tx.select().from(schema.purchaseItems).where(eq(schema.purchaseItems.purchaseId, id));
+
     for (const item of items) {
-      const newQty = await adjustStock(tx, item.productId, purchase.locationId, -item.quantity);
-      if (newQty < 0) throw new Error("متقدرش تمسح الفاتورة دي - جزء من الكمية اتباع بالفعل من المخزون");
+      // لازم نعكس متوسط التكلفة المرجّح *قبل* ما ننقص المخزون - عشان الحساب محتاج يعرف الكمية
+      // الإجمالية الحالية شاملة كمية الفاتورة دي. قبل كده الحذف كان بيرجّع الكمية بس بيسيب متوسط
+      // التكلفة (avgCost) زي ما هو من غير أي تصحيح، حتى لو الفاتورة اللي اتمسحت هي اللي أثرت عليه.
+      await reverseWeightedAvgCost(tx, item.productId, item.quantity, Number(item.unitCost));
+      // adjustStock بترفض بنفسها لو الحذف هيودّي بالرصيد تحت الصفر (يعني جزء من الكمية اتباع
+      // بالفعل) - مفيش داعي نتحقق تاني هنا، ولو رفضت هي اللي هترجع رسالة واضحة بمكان التوفر
+      await adjustStock(tx, item.productId, purchase.locationId, -item.quantity);
     }
+    // سيريالات "شبح": حذف الفاتورة دلوقتي بيمسح سيريالات المنتجات المرتبطة ببنودها تلقائيًا على
+    // مستوى قاعدة البيانات (onDelete: cascade على productSerials.purchaseItemId) بمجرد ما بنمسح
+    // purchaseItems تحت - آمن هنا لأن adjustStock فوق كان هيرفض الحذف أصلًا لو أي جزء من الكمية
+    // (وبالتبعية أي سيريال) اتباع بالفعل، يعني اللي هيتمسح كله لسه IN_STOCK فعليًا.
     const unpaid = Number(purchase.totalAmount) - Number(purchase.paidAmount);
     if (unpaid > 0) await updateSupplierBalance(tx, purchase.supplierId, -unpaid);
     if (Number(purchase.paidAmount) > 0 && purchase.paymentMethodId) {
@@ -260,7 +274,7 @@ async function deletePurchaseInner(id: string) {
     await tx.delete(schema.purchases).where(eq(schema.purchases.id, id));
   });
 
-  await logAudit({ action: "DELETE", entityType: "Purchase", entityId: id, before: purchase });
+  await logAudit({ action: "DELETE", entityType: "Purchase", entityId: id, before: purchaseForAudit });
   revalidatePath("/purchases");
   revalidatePath("/products");
   revalidatePath("/cash");

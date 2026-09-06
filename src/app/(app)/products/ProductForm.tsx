@@ -2,6 +2,8 @@
 import { useState, useTransition } from "react";
 import { createProduct, createCategory } from "@/actions/products";
 import { useRouter } from "next/navigation";
+import { isActionError } from "@/lib/actionError";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -19,6 +21,7 @@ export default function ProductForm({ categories }: { categories: any[] }) {
   const [localCategories, setLocalCategories] = useState(categories);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [imagePreview, setImagePreview] = useState<string>("");
+  const [error, setError] = useState("");
   const [form, setForm] = useState({
     name: "",
     categoryId: "",
@@ -26,6 +29,7 @@ export default function ProductForm({ categories }: { categories: any[] }) {
     warrantyMonths: "",
     wholesalePrice: "",
     retailPrice: "",
+    minSellingPrice: "",
     reorderPoint: "0",
     barcode: "",
   });
@@ -41,22 +45,29 @@ export default function ProductForm({ categories }: { categories: any[] }) {
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        setError("");
         start(async () => {
-          await createProduct({
-            name: form.name,
-            categoryId: form.categoryId || undefined,
-            requiresSerial: form.requiresSerial,
-            warrantyMonths: form.warrantyMonths ? parseInt(form.warrantyMonths) : undefined,
-            wholesalePrice: parseFloat(form.wholesalePrice || "0"),
-            retailPrice: parseFloat(form.retailPrice || "0"),
-            reorderPoint: parseInt(form.reorderPoint || "0"),
-            barcode: form.barcode || undefined,
-            imageUrl: imagePreview || undefined,
-          });
-          setOpen(false);
-          setForm({ name: "", categoryId: "", requiresSerial: false, warrantyMonths: "", wholesalePrice: "", retailPrice: "", reorderPoint: "0", barcode: "" });
-          setImagePreview("");
-          router.refresh();
+          try {
+            const r = await createProduct({
+              name: form.name,
+              categoryId: form.categoryId || undefined,
+              requiresSerial: form.requiresSerial,
+              warrantyMonths: form.warrantyMonths ? parseInt(form.warrantyMonths) : undefined,
+              wholesalePrice: parseFloat(form.wholesalePrice || "0"),
+              retailPrice: parseFloat(form.retailPrice || "0"),
+              minSellingPrice: form.minSellingPrice.trim() ? parseFloat(form.minSellingPrice) : undefined,
+              reorderPoint: parseInt(form.reorderPoint || "0"),
+              barcode: form.barcode || undefined,
+              imageUrl: imagePreview || undefined,
+            });
+            if (isActionError(r)) { setError(r.error); return; }
+            setOpen(false);
+            setForm({ name: "", categoryId: "", requiresSerial: false, warrantyMonths: "", wholesalePrice: "", retailPrice: "", minSellingPrice: "", reorderPoint: "0", barcode: "" });
+            setImagePreview("");
+            router.refresh();
+          } catch (e: any) {
+            setError(friendlyErrorMessage(e, "تعذر إضافة المنتج"));
+          }
         });
       }}
       className="app-card p-4 space-y-3"
@@ -97,10 +108,15 @@ export default function ProductForm({ categories }: { categories: any[] }) {
             onClick={() =>
               start(async () => {
                 if (!newCategoryName.trim()) return;
-                const cat = await createCategory({ name: newCategoryName.trim(), requiresSerial: false });
-                setLocalCategories([...localCategories, cat]);
-                setForm({ ...form, categoryId: cat.id });
-                setNewCategoryName("");
+                try {
+                  const cat = await createCategory({ name: newCategoryName.trim(), requiresSerial: false });
+                  if (isActionError(cat)) { setError(cat.error); return; }
+                  setLocalCategories([...localCategories, cat]);
+                  setForm({ ...form, categoryId: cat.id });
+                  setNewCategoryName("");
+                } catch (e: any) {
+                  setError(friendlyErrorMessage(e, "تعذر إضافة الفئة"));
+                }
               })
             }
             className="bg-navy text-white rounded px-3 text-sm"
@@ -118,8 +134,13 @@ export default function ProductForm({ categories }: { categories: any[] }) {
         )}
         <input required type="number" step="0.01" placeholder="سعر الجملة" value={form.wholesalePrice} onChange={(e) => setForm({ ...form, wholesalePrice: e.target.value })} className="border rounded px-3 py-2 text-sm" />
         <input required type="number" step="0.01" placeholder="سعر التجزئة" value={form.retailPrice} onChange={(e) => setForm({ ...form, retailPrice: e.target.value })} className="border rounded px-3 py-2 text-sm" />
+        <div>
+          <input type="number" step="0.01" placeholder="أقل سعر بيع مسموح (اختياري)" value={form.minSellingPrice} onChange={(e) => setForm({ ...form, minSellingPrice: e.target.value })} className="border rounded px-3 py-2 text-sm w-full" />
+          <p className="text-[10px] text-muted mt-0.5">لو محدد، الموظفين (غير الأدمن) مش هيقدروا يبيعوا بسعر أقل منه في الفاتورة أو عرض السعر</p>
+        </div>
         <input type="number" placeholder="حد إعادة الطلب" value={form.reorderPoint} onChange={(e) => setForm({ ...form, reorderPoint: e.target.value })} className="border rounded px-3 py-2 text-sm" />
       </div>
+      {error && <div className="text-red-600 text-sm bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>}
       <div className="flex gap-2">
         <button disabled={pending} className="bg-primary text-white rounded-lg px-4 py-2 text-sm">حفظ</button>
         <button type="button" onClick={() => setOpen(false)} className="text-muted text-sm">إلغاء</button>

@@ -17,7 +17,12 @@ export const PERMISSION_GROUPS: { group: string; perms: { key: string; label: st
     perms: [
       { key: "cash.view", label: "عرض الخزائن" },
       { key: "cash.adjust", label: "تسوية يدوية للخزينة" },
+      { key: "cash.transfer", label: "تحويل بين الخزائن" },
     ],
+  },
+  {
+    group: "السلف",
+    perms: [{ key: "loans.manage", label: "إدارة السلف (لينا وعلينا)" }],
   },
   {
     group: "المنتجات والمخزون",
@@ -43,7 +48,7 @@ export const PERMISSION_GROUPS: { group: string; perms: { key: string; label: st
     perms: [
       { key: "sales.create", label: "إنشاء فاتورة بيع" },
       { key: "sales.view", label: "عرض الفواتير" },
-      { key: "sales.edit_old", label: "تعديل/حذف فواتير قديمة" },
+      { key: "sales.edit_old", label: "حذف فواتير البيع (أي فاتورة، مش بس القديمة)" },
       { key: "sales.discount.large", label: "منح خصم كبير" },
       { key: "quotes.manage", label: "عروض الأسعار" },
     ],
@@ -95,6 +100,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
   ACCOUNTANT: [
     "dashboard.view",
     "cash.view",
+    "cash.transfer",
     "products.view",
     "inventory.view",
     "purchases.view",
@@ -105,6 +111,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "reports.view",
     "finance.view",
     "quotes.manage",
+    "loans.manage",
   ],
   WAREHOUSE_KEEPER: [
     "dashboard.view",
