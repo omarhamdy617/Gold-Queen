@@ -53,6 +53,12 @@ export async function getFinancialPosition() {
     .from(schema.orders)
     .where(eq(schema.orders.status, "SHIPPED"));
 
+  // حسابات السلف: رصيد موجب = فلوس ليّا (مستحقة لي)، رصيد سالب = فلوس عليّا (مديون بيها) -
+  // قبل كده حسابات السلف كانت متجاهلة تمامًا من "الوضع المالي" رغم إنها فلوس حقيقية داخلة/خارجة.
+  const loanAccounts = await db.select().from(schema.loanAccounts);
+  const totalLoanReceivable = loanAccounts.reduce((s, a) => s + Math.max(Number(a.balance), 0), 0);
+  const totalLoanPayable = loanAccounts.reduce((s, a) => s + Math.max(-Number(a.balance), 0), 0);
+
   return {
     totalCash,
     drawers,
@@ -64,6 +70,16 @@ export async function getFinancialPosition() {
     inventoryValue,
     byLocation: Object.values(byLocation),
     inTransitCount: inTransitOrders.length,
-    netPosition: totalCash + totalReceivable + inventoryValue + consignmentCostValue - totalPayable - totalCustomerCredit,
+    totalLoanReceivable,
+    totalLoanPayable,
+    netPosition:
+      totalCash +
+      totalReceivable +
+      inventoryValue +
+      consignmentCostValue +
+      totalLoanReceivable -
+      totalPayable -
+      totalCustomerCredit -
+      totalLoanPayable,
   };
 }
