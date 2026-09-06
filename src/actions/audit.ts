@@ -13,6 +13,8 @@ export async function listAuditLogs(limit = 300) {
       entityId: schema.auditLogs.entityId,
       createdAt: schema.auditLogs.createdAt,
       userName: schema.users.fullName,
+      before: schema.auditLogs.before,
+      after: schema.auditLogs.after,
     })
     .from(schema.auditLogs)
     .leftJoin(schema.users, eq(schema.auditLogs.userId, schema.users.id))

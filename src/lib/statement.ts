@@ -12,10 +12,17 @@ export type StatementRow = {
   balance?: number;
 };
 
+// ملحوظة مهمة: invoices/payments هنا لازم تكون *من بداية الفترة (from) لحد دلوقتي* - مش محدودة بـ`to`.
+// السبب: `currentBalance` هو الرصيد الحالي دلوقتي، فعشان نحسب الرصيد الصحيح في أي نقطة زمنية (زي نهاية
+// الفترة `to`)، لازم نطرح من الرصيد الحالي *كل* الحركات اللي حصلت بعد اللحظة دي لحد دلوقتي - مش بس
+// الحركات اللي جوه الفترة المعروضة. قبل كده كان بيتحسب الرصيد الافتتاحي والختامي غلط لو `to` تاريخ
+// قديم (كشف حساب لشهر فات مثلًا كان دايمًا بيظهر برصيد "النهارده" في آخر صف، حتى لو العميل سدد كل
+// حاجة بعد الفترة دي).
 export function buildCustomerTimeline(
   currentBalance: number,
   invoices: { createdAt: Date | string; code: string; total: string | number; paidAmount: string | number }[],
-  payments: { createdAt: Date | string; amount: string | number }[]
+  payments: { createdAt: Date | string; amount: string | number }[],
+  periodTo: Date | string
 ) {
   const rows: StatementRow[] = [];
   for (const i of invoices) {
@@ -28,15 +35,21 @@ export function buildCustomerTimeline(
   }
   rows.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-  // الرصيد الافتتاحي = الرصيد الحالي مطروح منه صافي حركة الفترة المعروضة (مدين - دائن)
-  const netMovement = rows.reduce((s, r) => s + r.debit - r.credit, 0);
-  const opening = currentBalance - netMovement;
+  // الرصيد الافتتاحي (عند بداية الفترة) = الرصيد الحالي مطروح منه صافي كل الحركات من بداية الفترة لحد دلوقتي
+  const netMovementSinceFrom = rows.reduce((s, r) => s + r.debit - r.credit, 0);
+  const opening = currentBalance - netMovementSinceFrom;
   let running = opening;
   const withRunning = rows.map((r) => {
     running += r.debit - r.credit;
     return { ...r, balance: running };
   });
-  return { rows: withRunning, opening };
+
+  // نعرض بس الصفوف اللي فعليًا جوه الفترة المطلوبة (لحد `to`) - لكن أرصدتها الجارية اتحسبت صح
+  // من الأول لأننا حسبناها من كل الحركات من `from` لحد دلوقتي، مش بس اللي هتتعرض
+  const toTime = new Date(periodTo).getTime();
+  const displayRows = withRunning.filter((r) => new Date(r.date).getTime() <= toTime);
+  const closingBalance = displayRows.length ? displayRows[displayRows.length - 1].balance! : opening;
+  return { rows: displayRows, opening, closingBalance };
 }
 
 export function buildSupplierTimeline(

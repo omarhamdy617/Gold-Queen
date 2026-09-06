@@ -21,7 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await getSession();
   if (!session) redirect("/login");
   const [perms, alerts] = await Promise.all([
-    getEffectivePermissions(session.userId, session.roleId, session.roleName),
+    getEffectivePermissions(session.userId),
     getAlertsSummary(),
   ]);
   const items = NAV_ITEMS.filter((i) => !i.perm || perms.has(i.perm));

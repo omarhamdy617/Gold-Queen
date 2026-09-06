@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!customer) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   const { invoices, payments } = await customerStatement(id, from, to);
 
-  const { rows: timeline, opening } = buildCustomerTimeline(Number(customer.balance), invoices, payments);
+  const { rows: timeline, opening } = buildCustomerTimeline(Number(customer.balance), invoices, payments, to);
 
   if (format === "pdf") {
     const doc = new PDFDocument({ margin: 40 });

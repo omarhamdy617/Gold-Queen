@@ -2,6 +2,8 @@
 import { useState, useTransition } from "react";
 import { giveConsignment } from "@/actions/consignments";
 import { useRouter } from "next/navigation";
+import { isActionError } from "@/lib/actionError";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function ConsignmentForm({ employees, products, locations }: any) {
   const [open, setOpen] = useState(false);
@@ -10,6 +12,7 @@ export default function ConsignmentForm({ employees, products, locations }: any)
   const [holderId, setHolderId] = useState(employees[0]?.id || "");
   const [locationId, setLocationId] = useState(locations[0]?.id || "");
   const [lines, setLines] = useState([{ productId: "", quantity: "", unitPrice: "" }]);
+  const [error, setError] = useState("");
 
   if (!open) return <button onClick={() => setOpen(true)} className="bg-gold text-white rounded-lg px-4 py-2 text-sm">+ تسليم عهدة</button>;
 
@@ -42,12 +45,21 @@ export default function ConsignmentForm({ employees, products, locations }: any)
       ))}
       <button type="button" onClick={() => setLines([...lines, { productId: "", quantity: "", unitPrice: "" }])} className="text-sm text-gold">+ سطر</button>
       <div className="flex gap-2 border-t pt-3">
-        <button disabled={pending} onClick={() => start(async () => {
-          await giveConsignment({ holderId, locationId, items: lines.filter((l) => l.productId && l.quantity).map((l) => ({ productId: l.productId, quantity: parseInt(l.quantity), unitPrice: parseFloat(l.unitPrice) || 0 })) });
-          setOpen(false); router.refresh();
-        })} className="bg-gold text-white rounded-lg px-5 py-2 text-sm">تسليم</button>
+        <button disabled={pending} onClick={() => {
+          setError("");
+          start(async () => {
+            try {
+              const r = await giveConsignment({ holderId, locationId, items: lines.filter((l) => l.productId && l.quantity).map((l) => ({ productId: l.productId, quantity: parseInt(l.quantity), unitPrice: parseFloat(l.unitPrice) || 0 })) });
+              if (isActionError(r)) { setError(r.error); return; }
+              setOpen(false); router.refresh();
+            } catch (e: any) {
+              setError(friendlyErrorMessage(e, "تعذر تسجيل العهدة"));
+            }
+          });
+        }} className="bg-gold text-white rounded-lg px-5 py-2 text-sm">تسليم</button>
         <button type="button" onClick={() => setOpen(false)} className="text-neutral-500 text-sm">إلغاء</button>
       </div>
+      {error && <div className="text-red-600 text-xs">{error}</div>}
     </div>
   );
 }

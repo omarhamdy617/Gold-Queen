@@ -11,12 +11,24 @@ export async function getFinancialPosition() {
 
   const customers = await db.select().from(schema.customers);
   const totalReceivable = customers.reduce((s, c) => s + Math.max(Number(c.balance), 0), 0);
+  // فلوس احنا مديونين بيها للعملاء (رصيدهم سالب - دفعوا زيادة أو رجّعوا بضاعة وليهم رصيد عندنا) -
+  // قبل كده الرقم ده كان بيتجاهل تمامًا في "الوضع المالي الصافي" فكان بيظهر أعلى من الحقيقي.
+  const totalCustomerCredit = customers.reduce((s, c) => s + Math.max(-Number(c.balance), 0), 0);
 
   const suppliers = await db.select().from(schema.suppliers);
   const totalPayable = suppliers.reduce((s, s2) => s + Number(s2.balance), 0);
 
   const consignments = await db.select().from(schema.consignments);
   const totalConsignmentValue = consignments.reduce((s, c) => s + Number(c.balance), 0);
+
+  // قيمة بضاعة العهدة *بسعر التكلفة* (avgCost) بدل سعر البيع للعميل - قبل كده "الوضع المالي" كان بيحسبها
+  // بسعر البيع (consignments.balance، اللي متبني على unitPrice وقت التسليم) وده بيضخّم صافي الوضع المالي
+  // عن الحقيقي، لأن قيمة البضاعة الفعلية اللي معاك (لسه ماتباعتش) هي تكلفتها مش سعر بيعها المتوقع.
+  const consignmentItemRows = await db
+    .select({ quantity: schema.consignmentItems.quantity, returnedQty: schema.consignmentItems.returnedQty, avgCost: schema.products.avgCost })
+    .from(schema.consignmentItems)
+    .innerJoin(schema.products, eq(schema.consignmentItems.productId, schema.products.id));
+  const consignmentCostValue = consignmentItemRows.reduce((s, r) => s + Math.max(r.quantity - r.returnedQty, 0) * Number(r.avgCost), 0);
 
   // قيمة المخزون بالتكلفة (محل + مخزن)
   const stockRows = await db
@@ -45,11 +57,13 @@ export async function getFinancialPosition() {
     totalCash,
     drawers,
     totalReceivable,
+    totalCustomerCredit,
     totalPayable,
     totalConsignmentValue,
+    consignmentCostValue,
     inventoryValue,
     byLocation: Object.values(byLocation),
     inTransitCount: inTransitOrders.length,
-    netPosition: totalCash + totalReceivable + inventoryValue + totalConsignmentValue - totalPayable,
+    netPosition: totalCash + totalReceivable + inventoryValue + consignmentCostValue - totalPayable - totalCustomerCredit,
   };
 }

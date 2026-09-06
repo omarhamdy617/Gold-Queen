@@ -12,8 +12,9 @@ export default async function FinancePage() {
         <Card label="إجمالي الكاش في الخزائن" value={money(f.totalCash)} color="bg-green-600" />
         <Card label="مستحق لي (عملاء وتجار)" value={money(f.totalReceivable)} color="bg-blue-600" />
         <Card label="مستحق عليّ (موردين)" value={money(f.totalPayable)} color="bg-red-600" />
+        <Card label="مستحق للعملاء (رصيد دائن ليهم)" value={money(f.totalCustomerCredit)} color="bg-orange-600" />
         <Card label="قيمة المخزون بالتكلفة" value={money(f.inventoryValue)} color="bg-amber-600" />
-        <Card label="بضاعة عند الموظفين (عهدة)" value={money(f.totalConsignmentValue)} color="bg-purple-600" />
+        <Card label="بضاعة عند الموظفين بالتكلفة (عهدة)" value={money(f.consignmentCostValue)} color="bg-purple-600" />
         <Card label="أوردرات في الطريق" value={num(f.inTransitCount)} color="bg-neutral-700" />
         <Card label="صافي الوضع المالي التقديري" value={money(f.netPosition)} color="bg-gold" wide />
       </div>

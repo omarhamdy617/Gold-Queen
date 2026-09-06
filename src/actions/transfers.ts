@@ -112,11 +112,16 @@ async function updateTransferInner(id: string, input: Parameters<typeof updateTr
     if (!it.quantity || it.quantity <= 0) throw new Error("لازم تدخل كمية صحيحة لكل صنف");
   }
 
-  const [transfer] = await db.select().from(schema.stockTransfers).where(eq(schema.stockTransfers.id, id));
-  if (!transfer) throw new Error("التحويل غير موجود");
-  const oldItems = await db.select().from(schema.stockTransferItems).where(eq(schema.stockTransferItems.transferId, id));
-
+  let oldItemsForAudit: any[] = [];
   await db.transaction(async (tx) => {
+    // قفل صف التحويل نفسه الأول جوه المعاملة، وبنقرأ oldItems *من جوه* المعاملة كمان - لو حصل تعديلين
+    // على نفس التحويل قريبين من بعض، التاني هيستنى لحد ما الأول يخلص ويقفل، وهيقرأ الحالة الفعلية
+    // بعد تعديل الأول (مش نسخة قديمة اتقرت قبل ما الأول يتنفذ) فمش هيعكس أثر خطأ.
+    const [transfer] = await tx.select().from(schema.stockTransfers).where(eq(schema.stockTransfers.id, id)).for("update");
+    if (!transfer) throw new Error("التحويل غير موجود");
+    const oldItems = await tx.select().from(schema.stockTransferItems).where(eq(schema.stockTransferItems.transferId, id));
+    oldItemsForAudit = oldItems;
+
     // عكس أثر التحويل القديم
     for (const item of oldItems) {
       await adjustStock(tx, item.productId, transfer.toLocationId, -item.quantity);
@@ -146,7 +151,7 @@ async function updateTransferInner(id: string, input: Parameters<typeof updateTr
       .where(eq(schema.stockTransfers.id, id));
   });
 
-  await logAudit({ action: "UPDATE", entityType: "StockTransfer", entityId: id, before: { oldItems }, after: input });
+  await logAudit({ action: "UPDATE", entityType: "StockTransfer", entityId: id, before: { oldItems: oldItemsForAudit }, after: input });
   revalidatePath("/products");
   revalidatePath("/transfers");
 }

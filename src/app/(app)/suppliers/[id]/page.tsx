@@ -25,7 +25,7 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
         </div>
       </div>
 
-      <PaySupplierForm supplierId={id} paymentMethods={paymentMethods} />
+      <PaySupplierForm supplierId={id} paymentMethods={paymentMethods} supplierBalance={Number(supplier.balance)} />
 
       <div className="app-card p-4 space-y-3">
         <div className="flex items-center justify-between">

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { isActionError } from "@/lib/actionError";
 
-export default function PaySupplierForm({ supplierId, paymentMethods }: { supplierId: string; paymentMethods: any[] }) {
+export default function PaySupplierForm({ supplierId, paymentMethods, supplierBalance }: { supplierId: string; paymentMethods: any[]; supplierBalance: number }) {
   const [amount, setAmount] = useState("");
   const [paymentMethodId, setPaymentMethodId] = useState(paymentMethods[0]?.id || "");
   const [transferMethod, setTransferMethod] = useState("");
@@ -45,6 +45,13 @@ export default function PaySupplierForm({ supplierId, paymentMethods }: { suppli
           const amt = parseFloat(amount) || 0;
           if (amt <= 0) return setError("أدخل مبلغ صحيح");
           if (!paymentMethodId) return setError("اختر طريقة الدفع");
+          // المبلغ أكبر من المستحق فعليًا على المورد - مسموح بس بعد تأكيد صريح (الفرق مش هيترصد كرصيد
+          // ليك تلقائيًا عند المورد إلا لو رصيده بقى سالب، فالتنبيه هنا يفكّرك تتأكد من الرقم الأول)
+          if (amt > Math.max(supplierBalance, 0)) {
+            const extra = (amt - Math.max(supplierBalance, 0)).toFixed(2);
+            const ok = confirm(`المبلغ اللي هتدفعه (${amt}) أكبر من المستحق فعليًا على المورد ده (${supplierBalance.toFixed(2)}) بمقدار ${extra} - متأكد إنك عايز تكمل؟`);
+            if (!ok) return;
+          }
           start(async () => {
             try {
               const result = await paySupplier({ supplierId, amount: amt, paymentMethodId, transferMethod: transferMethod || undefined, note: note || undefined });

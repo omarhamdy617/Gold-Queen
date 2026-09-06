@@ -10,6 +10,7 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
   const [pending, start] = useTransition();
   const router = useRouter();
   const [form, setForm] = useState({ username: "", fullName: "", password: "", roleId: roles[0]?.id || "" });
+  const [addError, setAddError] = useState("");
   const [newRoleName, setNewRoleName] = useState("");
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [pwUser, setPwUser] = useState<string | null>(null);
@@ -27,11 +28,19 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            setAddError("");
             start(async () => {
-              const u = await createUser(form);
-              setForm({ username: "", fullName: "", password: "", roleId: roles[0]?.id || "" });
-              setEditingUser(u.id);
-              router.refresh();
+              try {
+                // كانت من غير try/catch خالص - أي خطأ يترمي من createUser (زي اسم مستخدم مكرر) كان
+                // بيتسبب في فشل صامت تمامًا: الفورم مبيتصفرش، مفيش رسالة، وبيبان وكأنه نجح فعلًا
+                const u = await createUser(form);
+                if (isActionError(u)) { setAddError(u.error); return; }
+                setForm({ username: "", fullName: "", password: "", roleId: roles[0]?.id || "" });
+                setEditingUser(u.id);
+                router.refresh();
+              } catch (e: any) {
+                setAddError(friendlyErrorMessage(e, "تعذر إضافة الموظف"));
+              }
             });
           }}
           className="grid sm:grid-cols-5 gap-3 items-end"
@@ -43,6 +52,7 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
             {roles.map((r) => <option key={r.id} value={r.id}>{roleLabel(r.name)}</option>)}
           </select>
           <button disabled={pending} className="bg-primary text-white rounded-lg px-4 py-2 text-sm">+ إضافة موظف</button>
+          {addError && <div className="sm:col-span-5 text-red-600 text-xs bg-red-50 border border-red-200 rounded px-3 py-2">{addError}</div>}
         </form>
       </div>
 
@@ -80,7 +90,7 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
                   <td>{u.fullName}</td>
                   <td><span className="badge badge-blue">{roleLabel(u.roleName)}</span></td>
                   <td>
-                    <button onClick={() => start(async () => { await toggleUserActive(u.id, !u.active); router.refresh(); })} className={`text-xs rounded px-2 py-1 ${u.active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                    <button onClick={() => start(async () => { const r = await toggleUserActive(u.id, !u.active); if (isActionError(r)) { alert(r.error); return; } router.refresh(); })} className={`text-xs rounded px-2 py-1 ${u.active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                       {u.active ? "نشط" : "موقوف"}
                     </button>
                   </td>
@@ -100,7 +110,7 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
                       {editingUser === u.id ? "إخفاء الصلاحيات" : "الصلاحيات التفصيلية"}
                     </button>
                     <button onClick={() => setPwUser(pwUser === u.id ? null : u.id)} className="text-xs text-blue-600">كلمة المرور</button>
-                    <button onClick={() => { if (confirm("مسح المستخدم؟")) start(async () => { await deleteUser(u.id); router.refresh(); }); }} className="text-xs text-red-600">حذف</button>
+                    <button onClick={() => { if (confirm("مسح المستخدم؟")) start(async () => { const r = await deleteUser(u.id); if (isActionError(r)) { alert(r.error); return; } router.refresh(); }); }} className="text-xs text-red-600">حذف</button>
                   </td>
                 </tr>
                 {infoUser === u.id && (

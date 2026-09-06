@@ -4,6 +4,7 @@ import { money, dateAr } from "@/lib/format";
 import { notFound } from "next/navigation";
 import CollectionForm from "./CollectionForm";
 import PeriodPicker from "./PeriodPicker";
+import EditCustomerForm from "./EditCustomerForm";
 import { buildCustomerTimeline } from "@/lib/statement";
 
 export default async function CustomerDetailPage({
@@ -23,7 +24,7 @@ export default async function CustomerDetailPage({
   const { invoices, payments } = await customerStatement(id, fromDate, toDate);
   const paymentMethods = await listPaymentMethods();
 
-  const { rows: timeline, opening } = buildCustomerTimeline(Number(customer.balance), invoices, payments);
+  const { rows: timeline, opening } = buildCustomerTimeline(Number(customer.balance), invoices, payments, toDate);
 
   return (
     <div className="space-y-6">
@@ -38,7 +39,9 @@ export default async function CustomerDetailPage({
         </div>
       </div>
 
-      <CollectionForm customerId={id} paymentMethods={paymentMethods} />
+      <EditCustomerForm customer={customer} />
+
+      <CollectionForm customerId={id} paymentMethods={paymentMethods} customerBalance={Number(customer.balance)} />
 
       {customer.orders && customer.orders.length > 0 && (
         <div className="bg-white rounded-xl shadow p-4 space-y-2">
