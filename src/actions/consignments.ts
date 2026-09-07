@@ -10,7 +10,20 @@ import { revalidatePath } from "next/cache";
 
 export async function listEmployees() {
   await requirePermission("consignments.manage");
-  return db.select().from(schema.users).where(eq(schema.users.active, true));
+  // كانت db.select().from(schema.users) من غير تحديد أعمدة - وده كان بيرجّع passwordHash (كلمة السر
+  // المشفرة) وباقي أعمدة حساسة (failedLoginAttempts, lockedUntil) لأي مستخدم عنده صلاحية إدارة
+  // العُهد بس (مش أدمن)، وكانت القيم دي بتوصل لمتصفح العميل عادي جوه بيانات صفحة العُهد. بنحدد الأعمدة
+  // المطلوبة فعليًا بس (زي listUsers بالظبط) عشان الـ hash متسربش خالص برا السيرفر.
+  return db
+    .select({
+      id: schema.users.id,
+      username: schema.users.username,
+      fullName: schema.users.fullName,
+      active: schema.users.active,
+      roleId: schema.users.roleId,
+    })
+    .from(schema.users)
+    .where(eq(schema.users.active, true));
 }
 
 export async function listConsignments() {

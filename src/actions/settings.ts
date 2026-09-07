@@ -52,9 +52,30 @@ export async function createUser(data: { username: string; fullName: string; pas
 }
 
 export async function updateUserPassword(userId: string, password: string) {
+  try {
+    return await updateUserPasswordInner(userId, password);
+  } catch (e) {
+    return toActionError(e, "تعذر تغيير كلمة المرور");
+  }
+}
+
+async function updateUserPasswordInner(userId: string, password: string) {
   await requirePermission("users.manage");
   if (!password || password.length < MIN_PASSWORD_LENGTH) {
     throw new Error(`كلمة المرور لازم تكون ${MIN_PASSWORD_LENGTH} حروف/أرقام على الأقل`);
+  }
+  // منع الاستيلاء على حساب أدمن: قبل كده أي مستخدم عنده صلاحية "إدارة المستخدمين" بس (مش أدمن كامل)
+  // كان يقدر يغيّر كلمة مرور أي حساب أدمن في النظام ويدخل بيه هو نفسه مباشرة - وده بيلغي فايدة كل
+  // حماية موجودة ضد ترقية الذات لأدمن (في renameRole/updateUser)، لأنه مش لازم يترقّى أصلًا، يكفي
+  // يغيّر كلمة سر حساب أدمن موجود بالفعل ويدخل بيه هو. دلوقتي تغيير كلمة سر أي حساب أدمن محصور على
+  // أدمن كامل بس.
+  const [targetUser] = await db
+    .select({ roleName: schema.roles.name })
+    .from(schema.users)
+    .innerJoin(schema.roles, eq(schema.users.roleId, schema.roles.id))
+    .where(eq(schema.users.id, userId));
+  if (targetUser?.roleName === "ADMIN") {
+    await requireAdminRole();
   }
   const passwordHash = await hashPassword(password);
   await db.update(schema.users).set({ passwordHash, updatedAt: new Date() }).where(eq(schema.users.id, userId));
@@ -86,6 +107,15 @@ async function updateUserInner(userId: string, data: Parameters<typeof updateUse
         .innerJoin(schema.roles, eq(schema.users.roleId, schema.roles.id))
         .where(eq(schema.users.id, session.userId));
       if (actingUser?.roleName !== "ADMIN") throw new Error("بس الأدمن يقدر يدي حد صلاحية أدمن كامل");
+    } else {
+      // تنزيل مستخدم من دور "أدمن" لدور تاني (تنزيل درجة/demotion) - لازم نتأكد إن ده مش هيسيب النظام
+      // من غير أي أدمن نشط خالص. قبل كده الفحص ده (assertNotLastActiveAdmin) كان بيتنفذ بس مع إيقاف
+      // المستخدم أو حذفه، مش مع تغيير دوره من هنا - فكان ممكن حد ينزّل آخر أدمن نشط لدور عادي (يقصد
+      // أو بالغلط) وتقفل شاشات الإعدادات والصلاحيات على الجميع خالص من غير أي أدمن يقدر يرجّعها تاني.
+      // الدالة بترجع فورًا من غير ما تعمل حاجة لو المستخدم أصلًا مش أدمن حاليًا، فمفيش أي تأثير على
+      // تعديل بيانات مستخدم عادي.
+      const session = await requireSession();
+      await assertNotLastActiveAdmin(userId, session);
     }
   }
 
@@ -104,9 +134,12 @@ async function updateUserInner(userId: string, data: Parameters<typeof updateUse
   }
 }
 
-// بيتأكد إن العملية مش هتسيب النظام من غير أي أدمن نشط شغال، ومش هتوقف/تمسح أدمن لحساب نفسه
+// بيتأكد إن العملية (إيقاف / حذف / تنزيل درجة من أدمن) مش هتسيب النظام من غير أي أدمن نشط شغال،
+// ومش هتنفذ على حساب المستخدم لنفسه وهو داخل بيه. بتُستخدم من toggleUserActive وdeleteUser
+// وupdateUser (لما بيتم تنزيل مستخدم من دور أدمن لدور تاني) - عشان الحماية دي تتطبق بنفس الشكل
+// في الحالات التلاتة، مهما كانت الشاشة اللي جاية منها.
 async function assertNotLastActiveAdmin(userId: string, session: { userId: string }) {
-  if (userId === session.userId) throw new Error("متقدرش توقف/تمسح حسابك إنت شخصيًا وإنت داخل بيه");
+  if (userId === session.userId) throw new Error("متقدرش تنفذ العملية دي على حسابك إنت شخصيًا وإنت داخل بيه");
   const [target] = await db
     .select({ roleName: schema.roles.name })
     .from(schema.users)
@@ -119,7 +152,7 @@ async function assertNotLastActiveAdmin(userId: string, session: { userId: strin
     .innerJoin(schema.roles, eq(schema.users.roleId, schema.roles.id))
     .where(and(eq(schema.roles.name, "ADMIN"), eq(schema.users.active, true)));
   if (admins.filter((a) => a.id !== userId).length === 0) {
-    throw new Error("ده آخر حساب أدمن نشط في النظام - متقدرش توقفه/تمسحه، لازم يكون فيه أدمن تاني نشط الأول");
+    throw new Error("ده آخر حساب أدمن نشط في النظام - متقدرش تنفذ العملية دي عليه، لازم يكون فيه أدمن تاني نشط الأول");
   }
 }
 
@@ -218,8 +251,23 @@ async function setUserPermissionOverrideInner(userId: string, key: string, allow
 }
 
 export async function createCustomRole(name: string) {
+  try {
+    return await createCustomRoleInner(name);
+  } catch (e) {
+    return toActionError(e, "تعذر إنشاء الدور");
+  }
+}
+
+async function createCustomRoleInner(name: string) {
   await requirePermission("users.manage");
-  const [role] = await db.insert(schema.roles).values({ name, builtIn: false }).returning();
+  if (!name.trim()) throw new Error("لازم تكتب اسم للمسمى الوظيفي");
+  // اسم "ADMIN" محجوز لدور الأدمن الأساسي الوحيد في النظام (النظام بيتعرف على الأدمن بمطابقة الاسم
+  // ده حرفيًا) - لو سمحنا بإنشاء دور تاني بنفس الاسم، هيبقى فيه دورين اسمهم "ADMIN"، وأي مستخدم يتحط
+  // في أي واحد فيهم (حتى الجديد) هياخد صلاحيات أدمن كامل فورًا.
+  if (name.trim().toUpperCase() === "ADMIN") {
+    throw new Error('اسم "ADMIN" محجوز لدور الأدمن الأساسي في النظام بس - اختار اسم تاني للمسمى الوظيفي.');
+  }
+  const [role] = await db.insert(schema.roles).values({ name: name.trim(), builtIn: false }).returning();
   revalidatePath("/settings/users");
   return role;
 }
@@ -233,10 +281,25 @@ export async function renameRole(roleId: string, name: string) {
 }
 
 async function renameRoleInner(roleId: string, name: string) {
-  await requirePermission("users.manage");
+  // لازم أدمن كامل، مش بس صلاحية "إدارة المستخدمين" - قبل كده أي حد عنده الصلاحية دي بس (مش أدمن)
+  // كان يقدر يسمّي أي دور تاني (حتى دور موظف عادي هو متحكم فيه) بالاسم المحجوز "ADMIN"، وبما إن
+  // النظام بيتعرف على الأدمن بمطابقة الاسم "ADMIN" حرفيًا بس، ده كان بيحوّل كل أعضاء الدور ده لأدمن
+  // كامل فورًا من غير أي موافقة من أدمن حقيقي - ثغرة تصعيد صلاحيات مباشرة.
+  await requireAdminRole();
   if (!name.trim()) throw new Error("لازم تكتب اسم للمسمى الوظيفي");
-  const [role] = await db.update(schema.roles).set({ name: name.trim() }).where(eq(schema.roles.id, roleId)).returning();
-  await logAudit({ action: "UPDATE", entityType: "Role", entityId: roleId, after: { name } });
+  const trimmed = name.trim();
+  const [currentRole] = await db.select().from(schema.roles).where(eq(schema.roles.id, roleId));
+  // منع تسمية أي دور تاني "ADMIN" (تصعيد صلاحيات لكل أعضاء الدور ده)
+  if (currentRole?.name !== "ADMIN" && trimmed.toUpperCase() === "ADMIN") {
+    throw new Error('اسم "ADMIN" محجوز لدور الأدمن الأساسي في النظام بس - متقدرش تسمّي دور تاني بيه.');
+  }
+  // منع تغيير اسم دور "ADMIN" الحالي لاسم تاني (ده هيسيب النظام من غير أدمن معروف فورًا لأن كل
+  // أعضاء الدور هيفقدوا صلاحياتهم في نفس اللحظة، وهيفضي الاسم "ADMIN" يتحط على دور تاني بعد كده)
+  if (currentRole?.name === "ADMIN" && trimmed.toUpperCase() !== "ADMIN") {
+    throw new Error('متقدرش تغيّر اسم دور "ADMIN" - ده الاسم اللي النظام بيتعرف بيه على حسابات الأدمن الكاملة، وتغييره هيلغي صلاحيات كل الأدمنز فورًا.');
+  }
+  const [role] = await db.update(schema.roles).set({ name: trimmed }).where(eq(schema.roles.id, roleId)).returning();
+  await logAudit({ action: "UPDATE", entityType: "Role", entityId: roleId, after: { name: trimmed } });
   revalidatePath("/settings/users");
   return role;
 }

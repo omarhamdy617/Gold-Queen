@@ -15,10 +15,12 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [pwUser, setPwUser] = useState<string | null>(null);
   const [newPw, setNewPw] = useState("");
+  const [pwError, setPwError] = useState("");
   const [infoUser, setInfoUser] = useState<string | null>(null);
   const [infoForm, setInfoForm] = useState({ username: "", fullName: "", roleId: "" });
   const [infoError, setInfoError] = useState("");
   const [showRoles, setShowRoles] = useState(false);
+  const [roleAddError, setRoleAddError] = useState("");
 
   return (
     <div className="space-y-6">
@@ -69,11 +71,25 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
               <RoleRow key={r.id} role={r} onSaved={() => router.refresh()} />
             ))}
             <form
-              onSubmit={(e) => { e.preventDefault(); start(async () => { if (newRoleName) { await createCustomRole(newRoleName); setNewRoleName(""); router.refresh(); } }); }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                setRoleAddError("");
+                start(async () => {
+                  if (newRoleName) {
+                    // كانت النتيجة (نجاح أو {error}) بتتجاهل تمامًا - لو الاسم مرفوض (مثلًا محاولة تسمية
+                    // دور "ADMIN")، الفورم كان بيتصفر وكأنه نجح من غير أي رسالة للمستخدم إن العملية اتمنعت فعلًا
+                    const result = await createCustomRole(newRoleName);
+                    if (isActionError(result)) { setRoleAddError(result.error); return; }
+                    setNewRoleName("");
+                    router.refresh();
+                  }
+                });
+              }}
               className="flex gap-2 pt-2 border-t"
             >
               <input placeholder="اسم دور/مسمى وظيفي جديد" value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)} className="border rounded px-3 py-2 text-sm flex-1" />
               <button className="bg-navy text-white rounded-lg px-4 py-2 text-sm">+ إضافة مسمى جديد</button>
+              {roleAddError && <span className="text-red-600 text-xs self-center">{roleAddError}</span>}
             </form>
           </div>
         )}
@@ -109,7 +125,7 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
                     <button onClick={() => setEditingUser(editingUser === u.id ? null : u.id)} className="text-xs text-primary font-medium">
                       {editingUser === u.id ? "إخفاء الصلاحيات" : "الصلاحيات التفصيلية"}
                     </button>
-                    <button onClick={() => setPwUser(pwUser === u.id ? null : u.id)} className="text-xs text-blue-600">كلمة المرور</button>
+                    <button onClick={() => { setPwUser(pwUser === u.id ? null : u.id); setPwError(""); }} className="text-xs text-blue-600">كلمة المرور</button>
                     <button onClick={() => { if (confirm("مسح المستخدم؟")) start(async () => { const r = await deleteUser(u.id); if (isActionError(r)) { alert(r.error); return; } router.refresh(); }); }} className="text-xs text-red-600">حذف</button>
                   </td>
                 </tr>
@@ -150,7 +166,24 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
                     <td colSpan={5} className="p-3 bg-neutral-50">
                       <div className="flex gap-2 items-center">
                         <input type="password" placeholder="كلمة المرور الجديدة" value={newPw} onChange={(e) => setNewPw(e.target.value)} className="border rounded px-3 py-1.5 text-sm" />
-                        <button onClick={() => start(async () => { if (newPw) { await updateUserPassword(u.id, newPw); setNewPw(""); setPwUser(null); } })} className="bg-primary text-white text-xs rounded px-3 py-1.5">حفظ</button>
+                        <button
+                          onClick={() =>
+                            start(async () => {
+                              if (!newPw) return;
+                              setPwError("");
+                              // كانت النتيجة بتتجاهل تمامًا - لو التغيير اتمنع (زي منع مستخدم مش أدمن كامل من
+                              // تغيير كلمة مرور حساب أدمن)، الشاشة كانت بتقفل وكأن كلمة المرور اتغيرت فعلًا
+                              const result = await updateUserPassword(u.id, newPw);
+                              if (isActionError(result)) { setPwError(result.error); return; }
+                              setNewPw("");
+                              setPwUser(null);
+                            })
+                          }
+                          className="bg-primary text-white text-xs rounded px-3 py-1.5"
+                        >
+                          حفظ
+                        </button>
+                        {pwError && <span className="text-red-600 text-xs">{pwError}</span>}
                       </div>
                     </td>
                   </tr>
