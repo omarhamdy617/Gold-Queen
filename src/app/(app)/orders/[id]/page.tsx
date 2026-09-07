@@ -1,8 +1,14 @@
-import { getOrder } from "@/actions/orders";
+import { getOrder, getRevertPreviewStatus } from "@/actions/orders";
+import { listProductsWithStock } from "@/actions/products";
 import { money, dateAr } from "@/lib/format";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { can, isCallerAdmin } from "@/lib/auth";
 import { ORDER_STATUS_LABELS as LABELS, ORDER_ATTEMPT_RESULT_LABELS } from "@/lib/orderStatus";
+import PrintButton from "@/components/PrintButton";
+import PrintHeader from "@/components/PrintHeader";
+import OrderEditForm from "../OrderEditForm";
+import RevertStatusButton from "../RevertStatusButton";
 
 const COLORS: Record<string, string> = {
   PENDING: "badge-gray",
@@ -18,21 +24,36 @@ const SHIP: Record<string, string> = { INTERNAL_COURIER: "مندوب داخلي"
 
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const data = await getOrder(id);
+  const [data, canManage, isAdmin] = await Promise.all([getOrder(id), can("orders.manage"), isCallerAdmin()]);
   if (!data) return notFound();
   const { order, items, locationName, createdByName, assignedByName, deliveredByName, confirmedByName, cancelledByName } = data;
 
+  const canEditDetails = canManage && !["DELIVERED", "RETURNED", "CANCELLED"].includes(order.status);
+  const [products, revertToStatus] = await Promise.all([
+    canEditDetails ? listProductsWithStock() : Promise.resolve([]),
+    isAdmin ? getRevertPreviewStatus(id) : Promise.resolve(null),
+  ]);
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <div>
-        <Link href="/orders" className="text-xs text-primary underline">← كل الأوردرات</Link>
-        <div className="flex items-center gap-2 mt-1">
-          <h1 className="text-xl font-bold">أوردر {order.code}</h1>
-          <span className={`badge ${COLORS[order.status]}`}>{LABELS[order.status]}</span>
+      <div className="no-print flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <Link href="/orders" className="text-xs text-primary underline">← كل الأوردرات</Link>
+          <div className="flex items-center gap-2 mt-1">
+            <h1 className="text-xl font-bold">أوردر {order.code}</h1>
+            <span className={`badge ${COLORS[order.status]}`}>{LABELS[order.status]}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {isAdmin && revertToStatus && <RevertStatusButton orderId={id} previousStatusLabel={LABELS[revertToStatus] || revertToStatus} />}
+          <PrintButton />
         </div>
       </div>
 
-      <div className="app-card p-4 space-y-3">
+      {canEditDetails && <OrderEditForm orderId={id} products={products} order={order} items={items} />}
+
+      <div className="app-card p-4 space-y-3 print:shadow-none">
+        <PrintHeader subtitle={`تفاصيل أوردر - ${LABELS[order.status]}`} code={order.code} date={dateAr(order.createdAt)} />
         <h2 className="font-bold text-sm">بيانات العميل والتوصيل</h2>
         <div className="grid sm:grid-cols-2 gap-3 text-sm">
           <div><span className="text-muted">العميل: </span>{order.customerName}</div>
@@ -48,7 +69,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         </div>
       </div>
 
-      <div className="app-card p-4 space-y-3">
+      <div className="no-print app-card p-4 space-y-3">
         <h2 className="font-bold text-sm">مين عمل ايه</h2>
         <div className="grid sm:grid-cols-2 gap-3 text-sm">
           <div><span className="text-muted">سجّل الأوردر: </span>{createdByName || "-"}</div>
@@ -80,7 +101,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         </div>
       </div>
 
-      <div className="app-card p-4 space-y-3">
+      <div className="app-card p-4 space-y-3 print:shadow-none">
         <h2 className="font-bold text-sm">الأصناف والسعر</h2>
         <table className="w-full text-sm text-right">
           <thead><tr className="border-b text-muted"><th className="py-2">المنتج</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead>

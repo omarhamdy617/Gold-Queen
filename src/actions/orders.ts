@@ -1,7 +1,7 @@
 "use server";
 import { db, schema } from "@/db";
 import { eq, desc, and, or, ilike, gte, sql } from "drizzle-orm";
-import { requirePermission, requireAnyPermission, requireSession, logAudit, genCode } from "@/lib/auth";
+import { requirePermission, requireAnyPermission, requireSession, requireAdminRole, logAudit, genCode } from "@/lib/auth";
 import { adjustStock, stockShortageMessage, postCashByPaymentMethod } from "@/lib/ops";
 import { inArray } from "drizzle-orm";
 import { toActionError } from "@/lib/actionError";
@@ -513,7 +513,12 @@ async function updateOrderStatusInner(
   return order;
 }
 
-export async function listOrders(status?: string, search?: string) {
+// حجم الصفحة الافتراضي لقائمة الأوردرات - قبل كده كانت الشاشة بتجيب لحد 500 أوردر مرة واحدة وتعرضهم
+// كلهم كـ 500 صف تفاعلي (كل صف فيه StatusControl عنده كذا useState لوحده) - ده كان سبب رئيسي في
+// إن الصفحة "بتهنج" وبتاخر في المتصفح كل ما عدد الأوردرات يكبر، حتى لو السيرفر نفسه رد بسرعة
+const ORDERS_PAGE_SIZE = 60;
+
+export async function listOrders(status?: string, search?: string, page: number = 1) {
   await requirePermission("orders.manage");
   const trimmed = search?.trim();
   const conditions = [];
@@ -527,28 +532,48 @@ export async function listOrders(status?: string, search?: string) {
       )
     );
   }
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   const rows = await db
     .select()
     .from(schema.orders)
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(schema.orders.createdAt))
-    .limit(500);
-  return rows;
+    .limit(ORDERS_PAGE_SIZE + 1) // بنجيب صف زيادة بس عشان نعرف لو فيه صفحة تانية بعدها - من غير ما نعمل count() منفصل
+    .offset((safePage - 1) * ORDERS_PAGE_SIZE);
+  const hasMore = rows.length > ORDERS_PAGE_SIZE;
+  return { rows: rows.slice(0, ORDERS_PAGE_SIZE), hasMore, page: safePage, pageSize: ORDERS_PAGE_SIZE };
 }
 
 // -------------------- إحصائيات أعلى صفحة الأوردرات --------------------
+// قبل كده كانت بتجيب كل صفوف وكل أعمدة جدول الأوردرات كامل (من غير حد أقصى) وتحسب العدادات بـ
+// filter() في الجافاسكريبت - يعني كل ما عدد الأوردرات يكبر (خصوصًا بعد شهور من الشغل)، الصفحة
+// كانت بتاخد وقت أطول وأطول لحد ما توصل لحد الـ timeout بتاع السيرفر (Vercel) وتظهر "network error".
+// دلوقتي استعلام واحد بس بيرجع العدد النهائي لكل حالة من قاعدة البيانات نفسها (GROUP BY)
 export async function getOrderStats() {
   await requirePermission("orders.manage");
-  const orders = await db.select().from(schema.orders);
-  const total = orders.length;
-  const pending = orders.filter((o) => o.status === "PENDING").length;
-  const confirmed = orders.filter((o) => o.status === "CONFIRMED").length;
-  const preparing = orders.filter((o) => o.status === "PREPARING").length;
-  const shipped = orders.filter((o) => o.status === "SHIPPED").length;
-  const delivered = orders.filter((o) => o.status === "DELIVERED").length;
-  const returned = orders.filter((o) => o.status === "RETURNED").length;
-  const cancelled = orders.filter((o) => o.status === "CANCELLED").length;
-  const pendingCollection = orders.filter((o) => o.status === "DELIVERED" && o.collectionStatus === "PENDING").length;
+  const rows = await db
+    .select({ status: schema.orders.status, count: sql<number>`count(*)`.as("count") })
+    .from(schema.orders)
+    .groupBy(schema.orders.status);
+  const pendingCollectionRows = await db
+    .select({ count: sql<number>`count(*)`.as("count") })
+    .from(schema.orders)
+    .where(and(eq(schema.orders.status, "DELIVERED"), eq(schema.orders.collectionStatus, "PENDING")));
+
+  const byStatus: Record<string, number> = {};
+  let total = 0;
+  for (const r of rows) {
+    byStatus[r.status] = Number(r.count);
+    total += Number(r.count);
+  }
+  const pending = byStatus.PENDING || 0;
+  const confirmed = byStatus.CONFIRMED || 0;
+  const preparing = byStatus.PREPARING || 0;
+  const shipped = byStatus.SHIPPED || 0;
+  const delivered = byStatus.DELIVERED || 0;
+  const returned = byStatus.RETURNED || 0;
+  const cancelled = byStatus.CANCELLED || 0;
+  const pendingCollection = Number(pendingCollectionRows[0]?.count || 0);
   const inProgress = confirmed + preparing + shipped;
   return { total, pending, confirmed, preparing, shipped, delivered, returned, cancelled, inProgress, pendingCollection };
 }
@@ -556,7 +581,7 @@ export async function getOrderStats() {
 export async function getOrderItems(orderId: string) {
   await requirePermission("orders.manage");
   return db
-    .select({ id: schema.orderItems.id, quantity: schema.orderItems.quantity, unitPrice: schema.orderItems.unitPrice, productName: schema.products.name })
+    .select({ id: schema.orderItems.id, productId: schema.orderItems.productId, quantity: schema.orderItems.quantity, unitPrice: schema.orderItems.unitPrice, productName: schema.products.name })
     .from(schema.orderItems)
     .innerJoin(schema.products, eq(schema.orderItems.productId, schema.products.id))
     .where(eq(schema.orderItems.orderId, orderId));
@@ -577,7 +602,7 @@ export async function getOrder(orderId: string) {
   ]);
 
   const items = await db
-    .select({ id: schema.orderItems.id, quantity: schema.orderItems.quantity, unitPrice: schema.orderItems.unitPrice, productName: schema.products.name })
+    .select({ id: schema.orderItems.id, productId: schema.orderItems.productId, quantity: schema.orderItems.quantity, unitPrice: schema.orderItems.unitPrice, productName: schema.products.name })
     .from(schema.orderItems)
     .innerJoin(schema.products, eq(schema.orderItems.productId, schema.products.id))
     .where(eq(schema.orderItems.orderId, orderId));
@@ -631,4 +656,285 @@ export async function deactivateShippingCompany(id: string) {
   await requirePermission("settings.manage");
   await db.update(schema.shippingCompanies).set({ active: false }).where(eq(schema.shippingCompanies.id, id));
   revalidatePath("/settings");
+}
+
+// -------------------- تعديل بيانات الأوردر بعد التسجيل (اسم/هاتف/عنوان/أصناف/أسعار) --------------------
+// متاح طول ما الأوردر لسه ماوصلش لحالة نهائية (تم التسليم/مرتجع/ملغي) - لو محتاج تصحح أوردر خلص
+// خلاص، استخدم "تراجع عن آخر تحديث" (أدمن فقط) الأول عشان ترجعه لحالة قابلة للتعديل.
+export async function updateOrderDetails(orderId: string, input: {
+  customerName: string;
+  customerPhone: string;
+  customerPhone2?: string;
+  address: string;
+  governorate: string;
+  source?: "WEBSITE" | "PHONE" | "WHATSAPP" | "FACEBOOK" | "OTHER";
+  prepaid?: boolean;
+  orderNotes?: string;
+  deliveryNotes?: string;
+  discount?: number;
+  shippingFee?: number;
+  items: { productId: string; quantity: number; unitPrice: number }[];
+}) {
+  try {
+    return await updateOrderDetailsInner(orderId, input);
+  } catch (e) {
+    return toActionError(e, "تعذر حفظ تعديلات الأوردر");
+  }
+}
+
+async function updateOrderDetailsInner(orderId: string, input: Parameters<typeof updateOrderDetails>[1]) {
+  await requirePermission("orders.manage");
+
+  if (!input.customerName?.trim()) throw new Error("اسم العميل مطلوب");
+  if (!input.customerPhone?.trim()) throw new Error("رقم الهاتف مطلوب");
+  if (!input.address?.trim()) throw new Error("العنوان مطلوب");
+  if (!input.governorate?.trim()) throw new Error("المحافظة مطلوبة");
+  if (!input.items || input.items.length === 0) throw new Error("لازم يفضل صنف واحد على الأقل في الأوردر");
+  for (const item of input.items) {
+    if (!item.productId || !Number.isFinite(item.quantity) || item.quantity <= 0) throw new Error("فيه سطر صنف غير صحيح");
+    if (!Number.isFinite(item.unitPrice) || item.unitPrice < 0) throw new Error("سعر الصنف غير صحيح");
+  }
+  const discount = Number(input.discount || 0);
+  const shippingFee = Number(input.shippingFee || 0);
+  if (!Number.isFinite(discount) || discount < 0) throw new Error("قيمة الخصم غير صحيحة");
+  if (!Number.isFinite(shippingFee) || shippingFee < 0) throw new Error("مصاريف الشحن غير صحيحة");
+  const subtotal = input.items.reduce((s, i) => s + i.quantity * Number(i.unitPrice), 0);
+  const total = subtotal - discount + shippingFee;
+  if (total < 0) throw new Error("الإجمالي طلع بالسالب - راجع الخصم/الأسعار");
+
+  let before: any = null;
+  await db.transaction(async (tx) => {
+    const [order] = await tx.select().from(schema.orders).where(eq(schema.orders.id, orderId)).for("update");
+    if (!order) throw new Error("الأوردر غير موجود");
+    if (["DELIVERED", "RETURNED", "CANCELLED"].includes(order.status)) {
+      throw new Error('الأوردر ده خلص خلاص (تم التسليم/مرتجع/ملغي) - متقدرش تعدل بياناته دلوقتي. لو محتاج تصحح غلطة، استخدم "تراجع عن آخر تحديث" (أدمن) الأول');
+    }
+    before = order;
+
+    const oldItems = await tx.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, orderId));
+
+    // لو المخزون كان اتحجز فعليًا (الأوردر بقى له مكان محدد - قيد التجهيز أو في الشحن)، لازم نرجّع
+    // الكميات القديمة للمخزون الأول وبعدين ننقص الكميات الجديدة - عشان أي تعديل في الأصناف/الكميات
+    // ينعكس صح على رصيد المخزون الفعلي بدل ما يفضل محجوز بكمية قديمة غلط
+    if (order.locationId) {
+      for (const item of oldItems) {
+        await adjustStock(tx, item.productId, order.locationId, item.quantity);
+      }
+    }
+
+    await tx.delete(schema.orderItems).where(eq(schema.orderItems.orderId, orderId));
+    for (const item of input.items) {
+      await tx.insert(schema.orderItems).values({ orderId, productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice.toFixed(2) });
+    }
+
+    if (order.locationId) {
+      for (const item of input.items) {
+        const newQty = await adjustStock(tx, item.productId, order.locationId, -item.quantity);
+        if (newQty < 0) {
+          const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, item.productId));
+          const available = newQty + item.quantity;
+          throw new Error(await stockShortageMessage(tx, item.productId, product?.name || "المنتج", order.locationId, available, item.quantity));
+        }
+      }
+    }
+
+    // ربط/تحديث بيانات العميل بنفس أسلوب تسجيل الأوردر
+    let customerId = order.customerId;
+    const phone = normalizePhone(input.customerPhone.trim());
+    if (phone) {
+      if (customerId) {
+        await tx.update(schema.customers).set({ name: input.customerName.trim(), address: input.address.trim() }).where(eq(schema.customers.id, customerId));
+      } else {
+        const [existing] = await tx.select().from(schema.customers).where(eq(schema.customers.phone, phone)).for("update");
+        if (existing) customerId = existing.id;
+        else {
+          const [created] = await tx
+            .insert(schema.customers)
+            .values({ name: input.customerName.trim(), phone, type: "RETAIL", address: input.address.trim() })
+            .returning();
+          customerId = created.id;
+        }
+      }
+    }
+
+    await tx
+      .update(schema.orders)
+      .set({
+        customerId,
+        customerName: input.customerName.trim(),
+        customerPhone: input.customerPhone.trim(),
+        customerPhone2: input.customerPhone2?.trim() || null,
+        address: input.address.trim(),
+        governorate: input.governorate.trim(),
+        source: input.source || order.source,
+        prepaid: input.prepaid ?? order.prepaid,
+        orderNotes: input.orderNotes?.trim() || null,
+        deliveryNotes: input.deliveryNotes?.trim() || null,
+        subtotal: subtotal.toFixed(2),
+        discount: discount.toFixed(2),
+        shippingFee: shippingFee.toFixed(2),
+        total: total.toFixed(2),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.orders.id, orderId));
+  });
+
+  const [order] = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId));
+  // اسم حدث مختلف عن "UPDATE" (اللي بيستخدمها updateOrderStatus لتغيير الحالة نفسها) عشان
+  // "تراجع عن آخر تحديث" (revertOrderStatus) يقدر يفرّق بين تعديل بيانات عادي وتغيير حالة حقيقي،
+  // ويرجع بالظبط لآخر حالة اتغيرت مش يتلخبط بتعديلات البيانات اللي في النص
+  await logAudit({ action: "EDIT_DETAILS", entityType: "Order", entityId: orderId, before, after: order });
+  revalidatePath("/orders");
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/products");
+  revalidatePath("/customers");
+  return order;
+}
+
+// معاينة بس (من غير أي تعديل) لآخر حالة كان عليها الأوردر - بتستخدمها الواجهة عشان تعرض للأدمن
+// "هيرجع لحالة إيه" على زرار التراجع قبل ما يدوس عليه، ولو مفيش حاجة يرجعلها بترجع null
+export async function getRevertPreviewStatus(orderId: string) {
+  const [lastLog] = await db
+    .select({ before: schema.auditLogs.before })
+    .from(schema.auditLogs)
+    .where(
+      and(
+        eq(schema.auditLogs.entityType, "Order"),
+        eq(schema.auditLogs.entityId, orderId),
+        inArray(schema.auditLogs.action, ["CONFIRM", "ASSIGN_LOCATION", "SHIP", "UPDATE", "CANCEL"])
+      )
+    )
+    .orderBy(desc(schema.auditLogs.createdAt))
+    .limit(1);
+  const before = lastLog?.before as any;
+  return before?.status || null;
+}
+
+// -------------------- تراجع عن آخر تحديث لحالة الأوردر (أدمن فقط) --------------------
+// لو حد غيّر حالة الأوردر غلط (دوس على الحالة الغلط، أكد تسليم بالغلط، ألغى أوردر غلط...)، الأدمن
+// بس يقدر يرجّعه لآخر حالة كان عليها - وبيرجّع معاها أي أثر جانبي حصل وقتها (مخزون اتحجز/اترجع،
+// فاتورة وتحصيل اتسجلوا) عشان الأرقام تفضل متوافقة مع الواقع، مش بس اسم الحالة يتغير.
+export async function revertOrderStatus(orderId: string) {
+  try {
+    return await revertOrderStatusInner(orderId);
+  } catch (e) {
+    return toActionError(e, "تعذر التراجع عن آخر تحديث للأوردر");
+  }
+}
+
+async function revertOrderStatusInner(orderId: string) {
+  await requireAdminRole();
+  const session = await requireSession();
+
+  const STATUS_ACTIONS = ["CONFIRM", "ASSIGN_LOCATION", "SHIP", "UPDATE", "CANCEL"];
+  const [lastLog] = await db
+    .select()
+    .from(schema.auditLogs)
+    .where(and(eq(schema.auditLogs.entityType, "Order"), eq(schema.auditLogs.entityId, orderId), inArray(schema.auditLogs.action, STATUS_ACTIONS)))
+    .orderBy(desc(schema.auditLogs.createdAt))
+    .limit(1);
+  if (!lastLog) throw new Error("مفيش سجل تغيير حالة سابق للأوردر ده عشان نرجع له");
+  const before = lastLog.before as any;
+  if (!before || !before.status) throw new Error("سجل التدقيق ده مبيحتويش على حالة سابقة صالحة للرجوع ليها");
+
+  const result = await db.transaction(async (tx) => {
+    const [order] = await tx.select().from(schema.orders).where(eq(schema.orders.id, orderId)).for("update");
+    if (!order) throw new Error("الأوردر غير موجود");
+
+    const payload: any = { status: before.status, updatedAt: new Date() };
+
+    if (lastLog.action === "CONFIRM") {
+      payload.confirmedById = before.confirmedById;
+      payload.confirmedAt = before.confirmedAt;
+    } else if (lastLog.action === "ASSIGN_LOCATION") {
+      // كان اتحجز مخزون وقت تحديد المكان - نرجعه قبل ما نمسح المكان من الأوردر
+      const items = await tx.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, orderId));
+      for (const item of items) {
+        if (order.locationId) await adjustStock(tx, item.productId, order.locationId, item.quantity);
+      }
+      payload.locationId = before.locationId ?? null;
+      payload.assignedById = before.assignedById ?? null;
+      payload.assignedAt = before.assignedAt ?? null;
+    } else if (lastLog.action === "SHIP") {
+      payload.shippingMethod = before.shippingMethod ?? null;
+      payload.courierId = before.courierId ?? null;
+      payload.courierName = before.courierName ?? null;
+      payload.shippingCompanyId = before.shippingCompanyId ?? null;
+      payload.shippingCompanyName = before.shippingCompanyName ?? null;
+      payload.assignedById = before.assignedById ?? null;
+      payload.assignedAt = before.assignedAt ?? null;
+    } else if (lastLog.action === "UPDATE" && order.status === "DELIVERED") {
+      // لو الفاتورة والتحصيل اتسجلوا فعلًا وقت التسليم ده بالذات (مكانوش موجودين قبل كده)، لازم نلغيهم
+      if (order.invoiceId && !before.invoiceId) {
+        const [invoice] = await tx.select().from(schema.salesInvoices).where(eq(schema.salesInvoices.id, order.invoiceId)).for("update");
+        if (invoice) {
+          if (invoice.paymentMethodId && Number(invoice.paidAmount) > 0) {
+            await postCashByPaymentMethod(tx, invoice.paymentMethodId, "ADJUSTMENT", Number(invoice.paidAmount), {
+              direction: "out",
+              note: `عكس تحصيل الأوردر ${order.code} (تراجع أدمن عن تحديث غلط)`,
+              refType: "Order",
+              refId: orderId,
+              createdById: session.userId,
+            });
+          }
+          await tx.delete(schema.salesInvoiceItems).where(eq(schema.salesInvoiceItems.invoiceId, invoice.id));
+          await tx.delete(schema.salesInvoices).where(eq(schema.salesInvoices.id, invoice.id));
+        }
+      }
+      payload.collectionStatus = before.collectionStatus ?? null;
+      payload.collectedAmount = before.collectedAmount ?? null;
+      payload.deliveredById = before.deliveredById ?? null;
+      payload.deliveredAt = before.deliveredAt ?? null;
+      payload.invoiceId = before.invoiceId ?? null;
+    } else if (lastLog.action === "UPDATE" && order.status === "RETURNED") {
+      // كان اترجع للمخزون وقت التسجيل كمرتجع (لو كان له مكان محدد) - ننقصه تاني
+      if (order.locationId) {
+        const items = await tx.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, orderId));
+        for (const item of items) {
+          const newQty = await adjustStock(tx, item.productId, order.locationId, -item.quantity);
+          if (newQty < 0) {
+            const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, item.productId));
+            const available = newQty + item.quantity;
+            throw new Error(await stockShortageMessage(tx, item.productId, product?.name || "المنتج", order.locationId, available, item.quantity));
+          }
+        }
+      }
+      payload.returnReason = null;
+      payload.collectionStatus = before.collectionStatus ?? null;
+      payload.collectedAmount = before.collectedAmount ?? null;
+      payload.deliveredById = before.deliveredById ?? null;
+      payload.deliveredAt = before.deliveredAt ?? null;
+    } else if (lastLog.action === "CANCEL") {
+      // كان اترجع المخزون وقت الإلغاء (لو كان اتحدد له مكان) - ننقصه تاني
+      if (order.locationId) {
+        const items = await tx.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, orderId));
+        for (const item of items) {
+          const newQty = await adjustStock(tx, item.productId, order.locationId, -item.quantity);
+          if (newQty < 0) {
+            const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, item.productId));
+            const available = newQty + item.quantity;
+            throw new Error(await stockShortageMessage(tx, item.productId, product?.name || "المنتج", order.locationId, available, item.quantity));
+          }
+        }
+      }
+      payload.cancelReason = null;
+      payload.cancelledById = null;
+      payload.cancelledAt = null;
+    } else {
+      throw new Error("مش قادر أحدد إزاي أرجع الحالة دي تلقائيًا - راجع الأوردر يدويًا من غير الزرار ده");
+    }
+
+    await tx.update(schema.orders).set(payload).where(eq(schema.orders.id, orderId));
+    return { previousStatus: order.status };
+  });
+
+  const [order] = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId));
+  await logAudit({ action: "REVERT_STATUS", entityType: "Order", entityId: orderId, before: { status: result.previousStatus }, after: order });
+  revalidatePath("/orders");
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/products");
+  revalidatePath("/cash");
+  revalidatePath("/sales");
+  revalidatePath("/");
+  return order;
 }
