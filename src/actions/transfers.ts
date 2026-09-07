@@ -126,6 +126,21 @@ async function updateTransferInner(id: string, input: Parameters<typeof updateTr
     for (const item of oldItems) {
       await adjustStock(tx, item.productId, transfer.toLocationId, -item.quantity);
       await adjustStock(tx, item.productId, transfer.fromLocationId, item.quantity);
+      // رجّع سيريالات المنتج ده (لو بيتباع بسيريال) من مكان الوجهة القديم لمكان المصدر القديم - قبل
+      // كده تعديل تحويل كان بيصحح رقم الكمية الإجمالية بس (جدول stocks) ومبيلمسش سيريالات المنتجات
+      // خالص، فكانت بتفضل مسجّلة في المكان القديم للأبد حتى بعد ما التحويل يتعدّل لمكان تاني - يعني
+      // شاشة "بحث بالسيريال" كانت بتقول المكان الغلط بعد أي تعديل على تحويل فيه منتج سيريال.
+      // نفس منطق النقل وقت الإنشاء بالظبط: مفيش ربط مباشر بين سيريال بعينه والتحويل اللي نقله، فبنعتمد
+      // على "أول عدد كافي من السيريالات الموجودة فعليًا في مكان الوجهة الحالي" وقت التعديل.
+      const serialsAtOldDest = await tx.select().from(schema.productSerials).where(eq(schema.productSerials.productId, item.productId));
+      let movedBack = 0;
+      for (const s of serialsAtOldDest) {
+        if (movedBack >= item.quantity) break;
+        if (s.locationId === transfer.toLocationId && s.status === "IN_STOCK") {
+          await tx.update(schema.productSerials).set({ locationId: transfer.fromLocationId }).where(eq(schema.productSerials.id, s.id));
+          movedBack++;
+        }
+      }
     }
     // تحقق من توفر الكمية الجديدة بعد العكس
     for (const item of input.items) {
@@ -144,6 +159,17 @@ async function updateTransferInner(id: string, input: Parameters<typeof updateTr
       await tx.insert(schema.stockTransferItems).values({ transferId: id, productId: item.productId, quantity: item.quantity });
       await adjustStock(tx, item.productId, input.fromLocationId, -item.quantity);
       await adjustStock(tx, item.productId, input.toLocationId, item.quantity);
+      // انقل سيريالات المنتج ده (لو بيتباع بسيريال) من المصدر الجديد للوجهة الجديدة - نفس منطق
+      // createTransferInner بالظبط
+      const serials = await tx.select().from(schema.productSerials).where(eq(schema.productSerials.productId, item.productId));
+      let moved = 0;
+      for (const s of serials) {
+        if (moved >= item.quantity) break;
+        if (s.locationId === input.fromLocationId && s.status === "IN_STOCK") {
+          await tx.update(schema.productSerials).set({ locationId: input.toLocationId }).where(eq(schema.productSerials.id, s.id));
+          moved++;
+        }
+      }
     }
     await tx
       .update(schema.stockTransfers)

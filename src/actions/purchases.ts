@@ -33,7 +33,16 @@ export async function createSupplier(data: { name: string; phone?: string; notes
 
 export async function updateSupplier(id: string, data: Partial<{ name: string; phone: string; notes: string; active: boolean }>) {
   await requirePermission("purchases.create");
-  const [s] = await db.update(schema.suppliers).set(data).where(eq(schema.suppliers.id, id)).returning();
+  // بنبني الـ payload بأسماء الأعمدة المسموحة صراحةً واحد واحد - مش .set(data) مباشرة زي ما كان -
+  // عشان لو حد بعت طلب مباشر لنقطة الـ Server Action دي (من غير المرور على TypeScript، اللي بيتفحص
+  // وقت البرمجة بس مش وقت التشغيل) وحط عمود حساس زي balance (اللي علينا للمورد - المفروض يتغيّر
+  // بس من خلال عمليات شراء/دفع/مرتجع حقيقية عشان يفضل متوافق مع سجل الحركات)، متتسجلش.
+  const payload: any = {};
+  if (data.name !== undefined) payload.name = data.name;
+  if (data.phone !== undefined) payload.phone = data.phone;
+  if (data.notes !== undefined) payload.notes = data.notes;
+  if (data.active !== undefined) payload.active = data.active;
+  const [s] = await db.update(schema.suppliers).set(payload).where(eq(schema.suppliers.id, id)).returning();
   revalidatePath("/suppliers");
   return s;
 }

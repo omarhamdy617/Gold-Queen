@@ -59,7 +59,15 @@ export async function updateCustomer(id: string, data: Partial<{ name: string; p
 
 async function updateCustomerInner(id: string, data: Parameters<typeof updateCustomer>[1]) {
   await requirePermission("customers.manage");
-  const payload: any = { ...data };
+  // بنبني الـ payload بأسماء الأعمدة المسموحة صراحةً واحد واحد - مش {...data} - عشان لو حد بعت طلب
+  // مباشر لنقطة الـ Server Action دي (من غير المرور على TypeScript، اللي بيتفحص وقت البرمجة بس مش
+  // وقت التشغيل) وحط عمود حساس زي balance (رصيد العميل - المفروض يتغيّر بس من خلال فواتير/تحصيل/
+  // مرتجعات حقيقية عشان يفضل متوافق مع سجل الحركات الفعلي)، متتسجلش.
+  const payload: any = {};
+  if (data.name !== undefined) payload.name = data.name;
+  if (data.type !== undefined) payload.type = data.type;
+  if (data.notes !== undefined) payload.notes = data.notes;
+  if (data.active !== undefined) payload.active = data.active;
   if (data.phone !== undefined) {
     const phone = normalizePhone(data.phone);
     if (phone) {

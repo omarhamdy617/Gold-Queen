@@ -129,7 +129,20 @@ export async function updateProduct(id: string, data: Partial<{
 async function updateProductInner(id: string, data: Parameters<typeof updateProduct>[1]) {
   await requirePermission("products.manage");
   const before = await db.select().from(schema.products).where(eq(schema.products.id, id)).then(r => r[0]);
-  const payload: any = { ...data, updatedAt: new Date() };
+  // بنبني الـ payload بأسماء الأعمدة المسموحة صراحةً واحد واحد - مش {...data} - عشان لو حد بعت طلب
+  // مباشر لنقطة الـ Server Action دي (من برا الواجهة، متجاوز الـ TypeScript اللي بيتفحص وقت البرمجة
+  // بس مش وقت التشغيل) وحط في الطلب عمود حساس زي avgCost (سعر التكلفة المتوسط - بيتحسب تلقائيًا من
+  // عمليات الشراء والتحويل فقط ومينفعش يتغيّر يدوي أبدًا، وإلا كل تقييم المخزون والأرباح يبقى غلط)،
+  // متتسجلش. كل عمود مسموح بيتاخد بالاسم صراحةً بس لو موجود في data.
+  const payload: any = { updatedAt: new Date() };
+  if (data.name !== undefined) payload.name = data.name;
+  if (data.categoryId !== undefined) payload.categoryId = data.categoryId;
+  if (data.requiresSerial !== undefined) payload.requiresSerial = data.requiresSerial;
+  if (data.warrantyMonths !== undefined) payload.warrantyMonths = data.warrantyMonths;
+  if (data.unit !== undefined) payload.unit = data.unit;
+  if (data.reorderPoint !== undefined) payload.reorderPoint = data.reorderPoint;
+  if (data.active !== undefined) payload.active = data.active;
+  if (data.imageUrl !== undefined) payload.imageUrl = data.imageUrl;
   if (data.wholesalePrice !== undefined) payload.wholesalePrice = data.wholesalePrice.toFixed(2);
   if (data.retailPrice !== undefined) payload.retailPrice = data.retailPrice.toFixed(2);
   if (data.minSellingPrice !== undefined) payload.minSellingPrice = data.minSellingPrice === null ? null : data.minSellingPrice.toFixed(2);
