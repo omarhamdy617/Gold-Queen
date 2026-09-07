@@ -29,7 +29,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
           <tbody>
             {invoices.map((inv) => (
               <tr key={inv.id} className="border-b last:border-0 hover:bg-neutral-50">
-                <td className="p-3"><Link href={`/sales/${inv.id}`} className="text-gold font-mono text-xs">{inv.code}</Link></td>
+                <td className="p-3"><Link href={`/sales/${inv.id}`} prefetch={false} className="text-gold font-mono text-xs">{inv.code}</Link></td>
                 <td>{inv.customerName || "عميل نقدي"}</td>
                 <td>{money(inv.total)}</td>
                 <td>{money(inv.paidAmount)}</td>
