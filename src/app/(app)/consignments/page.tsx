@@ -1,5 +1,5 @@
 import { listConsignments, listEmployees, getOldestPendingItemAge } from "@/actions/consignments";
-import { listProductsWithStock, listLocations } from "@/actions/products";
+import { listLocations } from "@/actions/products";
 import { listPaymentMethods } from "@/actions/cash";
 import { money } from "@/lib/format";
 import ConsignmentForm from "./ConsignmentForm";
@@ -10,14 +10,14 @@ import ConsignmentLimitForm from "./ConsignmentLimitForm";
 const STALE_DAYS = 21;
 
 export default async function ConsignmentsPage() {
-  const [consignments, employees, products, locations, paymentMethods, oldestAges] = await Promise.all([
-    listConsignments(), listEmployees(), listProductsWithStock(), listLocations(), listPaymentMethods(), getOldestPendingItemAge(),
+  const [consignments, employees, locations, paymentMethods, oldestAges] = await Promise.all([
+    listConsignments(), listEmployees(), listLocations(), listPaymentMethods(), getOldestPendingItemAge(),
   ]);
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">عهدة الموظفين والمناديب</h1>
       <p className="text-xs text-muted -mt-4">المندوب/الموظف اللي بيستلم العهدة بيتحدد من قائمة الموظفين المسجلين في السيستم (الإعدادات ← المستخدمين). لو المندوب مش موجود في القايمة، سجله كمستخدم/موظف الأول.</p>
-      <ConsignmentForm employees={employees} products={products} locations={locations} />
+      <ConsignmentForm employees={employees} locations={locations} />
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {consignments.map((c) => {
           const oldestAt = (oldestAges as Record<string, Date>)[c.id];
