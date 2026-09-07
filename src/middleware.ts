@@ -47,7 +47,13 @@ export async function middleware(req: NextRequest) {
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
-  return NextResponse.next();
+  // بنمرر المسار الحالي كـ header لـ layout.tsx - عشان يقدر يتأكد إن المستخدم عنده صلاحية الوصول
+  // لصفحة المسار ده تحديدًا (مش بس إن عنده جلسة صحيحة). ده middleware بيشتغل على Edge runtime
+  // ومش عنده اتصال بقاعدة البيانات، فمش المكان الصح لفحص الصلاحيات نفسها (لازم تتقرأ فريش من قاعدة
+  // البيانات زي ما بيحصل في باقي النظام، مش من الـ JWT القديم اللي ممكن يبقى فيه دور/صلاحيات قديمة).
+  const headers = new Headers(req.headers);
+  headers.set("x-pathname", pathname);
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {

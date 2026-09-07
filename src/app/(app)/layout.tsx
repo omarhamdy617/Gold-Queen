@@ -1,5 +1,6 @@
 import { getSession, getEffectivePermissions } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { NAV_ITEMS } from "@/lib/nav";
 import { getAlertsSummary } from "@/actions/notifications";
 import LogoutButton from "@/components/LogoutButton";
@@ -7,6 +8,22 @@ import GlobalSearch from "@/components/GlobalSearch";
 import NavList from "@/components/NavList";
 import NotificationsBell from "@/components/NotificationsBell";
 import AppShell from "@/components/AppShell";
+
+// بيدوّر على أنسب عنصر في NAV_ITEMS للمسار الحالي - أطول href مطابق كـ prefix (عشان "/settings/users"
+// يتفحص بصلاحيته الخاصة "users.manage" بدل ما ياخد صلاحية "/settings" الأعم "settings.manage" بالغلط،
+// ونفس الفكرة بالظبط لـ"/sales/new" و"/products/barcode" مقابل "/sales" و"/products" الأعم).
+const SORTED_NAV_ITEMS = [...NAV_ITEMS].sort((a, b) => b.href.length - a.href.length);
+function findRequiredPermission(pathname: string): string | null {
+  for (const item of SORTED_NAV_ITEMS) {
+    if (pathname === item.href || pathname.startsWith(item.href + "/")) {
+      return item.perm || null;
+    }
+  }
+  // مفيش أي صفحة حالية في النظام من غير صلاحية مسجّلة في NAV_ITEMS - فمسار مش متطابق مع أي عنصر
+  // فيها معناه على الأغلب صفحة جديدة اتضافت واتنسي تتسجل في القائمة دي. الافتراضي الآمن هو المنع
+  // (مش السماح) لحد ما تتسجل صراحةً - نفس فلسفة "امنع افتراضيًا" المستخدمة في باقي النظام.
+  return "__UNKNOWN_PAGE__";
+}
 
 const SECTIONS: { title: string; hrefs: string[] }[] = [
   { title: "عام", hrefs: ["/"] },
@@ -26,6 +43,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
   const items = NAV_ITEMS.filter((i) => !i.perm || perms.has(i.perm));
   const itemsByHref = new Map(items.map((i) => [i.href, i]));
+
+  // فحص صلاحية الوصول للصفحة الحالية نفسها - قبل كده الحماية الوحيدة كانت إخفاء رابط الصفحة من
+  // القائمة الجانبية بس. أي مستخدم عنده جلسة صحيحة (بغض النظر عن دوره وصلاحياته) كان يقدر يفتح أي
+  // مسار مباشرة بكتابته في المتصفح، ويشوف بياناته لو الصفحة أو الأكشن اللي بتجيب البيانات نسيت
+  // تتأكد من الصلاحية بنفسها (زي ما حصل فعليًا في 3 عمليات مختلفة في المنتجات قبل كده) - إخفاء
+  // الرابط مش حماية حقيقية، بس تحسين شكلي. دلوقتي بنتأكد من صلاحية الصفحة نفسها هنا كمان، مرة واحدة
+  // في مكان واحد، بغض النظر عن أي صفحة أو أكشن تحديدًا بتتفتح.
+  const pathname = (await headers()).get("x-pathname") || "";
+  const requiredPerm = findRequiredPermission(pathname);
+  const denied = requiredPerm === "__UNKNOWN_PAGE__" ? true : requiredPerm ? !perms.has(requiredPerm) : false;
 
   const initials = (session.fullName || "?").trim().slice(0, 1);
 
@@ -86,7 +113,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="no-print bg-card/95 border-b border-border p-2.5 md:hidden">
         <GlobalSearch />
       </div>
-      <div className="p-4 md:p-6">{children}</div>
+      <div className="p-4 md:p-6">
+        {denied ? (
+          <div className="app-card p-8 text-center space-y-2 max-w-md mx-auto mt-10">
+            <div className="text-4xl">🔒</div>
+            <div className="font-bold text-lg">مش مصرّح لك بالدخول للصفحة دي</div>
+            <div className="text-sm text-muted">الصلاحية اللي محتاجها الصفحة دي مش متاحة لدورك الحالي ({session.roleName}). لو محتاج تدخلها، كلّم الأدمن يضيفلك الصلاحية من شاشة المستخدمين.</div>
+          </div>
+        ) : (
+          children
+        )}
+      </div>
     </AppShell>
   );
 }
