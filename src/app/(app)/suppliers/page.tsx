@@ -35,7 +35,7 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
                 <td className="p-3">{s.name}</td>
                 <td>{s.phone || "-"}</td>
                 <td className={Number(s.balance) > 0 ? "text-red-600 font-medium" : ""}>{money(s.balance)}</td>
-                <td className="p-2"><Link href={`/suppliers/${s.id}`} className="text-primary text-xs underline">فتح كشف الحساب</Link></td>
+                <td className="p-2"><Link href={`/suppliers/${s.id}`} prefetch={false} className="text-primary text-xs underline">فتح كشف الحساب</Link></td>
               </tr>
             ))}
             {suppliers.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-muted">مفيش موردين لسه - سجل مورد جديد من شاشة المشتريات</td></tr>}
