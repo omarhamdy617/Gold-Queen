@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { approveReturn, rejectReturn } from "@/actions/returns";
 import { useRouter } from "next/navigation";
 import { isActionError } from "@/lib/actionError";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function ApproveControls({ id, locations, paymentMethods }: { id: string; locations: any[]; paymentMethods: any[] }) {
   const [pending, start] = useTransition();
@@ -25,9 +26,13 @@ export default function ApproveControls({ id, locations, paymentMethods }: { id:
           onClick={() => {
             setError("");
             start(async () => {
-              const r = await approveReturn(id, locationId, pmId);
-              if (isActionError(r)) { setError(r.error); return; }
-              router.refresh();
+              try {
+                const r = await approveReturn(id, locationId, pmId);
+                if (isActionError(r)) { setError(r.error); return; }
+                router.refresh();
+              } catch (err: any) {
+                setError(friendlyErrorMessage(err, "تعذر اعتماد المرتجع - جرب تاني"));
+              }
             });
           }}
           className="bg-green-600 text-white text-xs rounded px-2 py-1"
@@ -39,9 +44,13 @@ export default function ApproveControls({ id, locations, paymentMethods }: { id:
           onClick={() => {
             setError("");
             start(async () => {
-              const r = await rejectReturn(id);
-              if (isActionError(r)) { setError(r.error); return; }
-              router.refresh();
+              try {
+                const r = await rejectReturn(id);
+                if (isActionError(r)) { setError(r.error); return; }
+                router.refresh();
+              } catch (err: any) {
+                setError(friendlyErrorMessage(err, "تعذر رفض المرتجع - جرب تاني"));
+              }
             });
           }}
           className="bg-red-600 text-white text-xs rounded px-2 py-1"
