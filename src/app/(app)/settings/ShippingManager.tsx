@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { createCourier, createShippingCompany, deactivateCourier, deactivateShippingCompany } from "@/actions/orders";
 import { useRouter } from "next/navigation";
+import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function ShippingManager({ couriers, shippingCompanies }: { couriers: any[]; shippingCompanies: any[] }) {
   const [pending, start] = useTransition();
@@ -10,6 +11,8 @@ export default function ShippingManager({ couriers, shippingCompanies }: { couri
   const [courierPhone, setCourierPhone] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [companyPhone, setCompanyPhone] = useState("");
+  const [courierError, setCourierError] = useState("");
+  const [companyError, setCompanyError] = useState("");
 
   return (
     <div className="grid sm:grid-cols-2 gap-4">
@@ -20,7 +23,16 @@ export default function ShippingManager({ couriers, shippingCompanies }: { couri
             <li key={c.id} className="flex items-center justify-between">
               <span>• {c.name} {c.phone && <span className="text-muted">({c.phone})</span>}</span>
               <button
-                onClick={() => start(async () => { await deactivateCourier(c.id); router.refresh(); })}
+                onClick={() =>
+                  start(async () => {
+                    try {
+                      await deactivateCourier(c.id);
+                      router.refresh();
+                    } catch (err: any) {
+                      setCourierError(friendlyErrorMessage(err, "تعذر إيقاف المندوب - جرب تاني"));
+                    }
+                  })
+                }
                 className="text-xs text-red-500"
               >
                 إيقاف
@@ -32,11 +44,16 @@ export default function ShippingManager({ couriers, shippingCompanies }: { couri
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            setCourierError("");
             start(async () => {
               if (!courierName.trim()) return;
-              await createCourier(courierName.trim(), courierPhone.trim() || undefined);
-              setCourierName(""); setCourierPhone("");
-              router.refresh();
+              try {
+                await createCourier(courierName.trim(), courierPhone.trim() || undefined);
+                setCourierName(""); setCourierPhone("");
+                router.refresh();
+              } catch (err: any) {
+                setCourierError(friendlyErrorMessage(err, "تعذر إضافة المندوب - البيانات لسه موجودة، جرب تاني"));
+              }
             });
           }}
           className="flex flex-wrap gap-2"
@@ -45,6 +62,7 @@ export default function ShippingManager({ couriers, shippingCompanies }: { couri
           <input value={courierPhone} onChange={(e) => setCourierPhone(e.target.value)} placeholder="رقم الهاتف" className="border rounded px-3 py-2 text-sm flex-1 min-w-[120px]" />
           <button disabled={pending} className="bg-primary text-white rounded-lg px-4 py-2 text-sm shrink-0">إضافة</button>
         </form>
+        {courierError && <div className="text-red-600 text-xs">{courierError}</div>}
       </div>
 
       <div className="app-card p-4 space-y-3">
@@ -54,7 +72,16 @@ export default function ShippingManager({ couriers, shippingCompanies }: { couri
             <li key={c.id} className="flex items-center justify-between">
               <span>• {c.name} {c.phone && <span className="text-muted">({c.phone})</span>}</span>
               <button
-                onClick={() => start(async () => { await deactivateShippingCompany(c.id); router.refresh(); })}
+                onClick={() =>
+                  start(async () => {
+                    try {
+                      await deactivateShippingCompany(c.id);
+                      router.refresh();
+                    } catch (err: any) {
+                      setCompanyError(friendlyErrorMessage(err, "تعذر إيقاف الشركة - جرب تاني"));
+                    }
+                  })
+                }
                 className="text-xs text-red-500"
               >
                 إيقاف
@@ -66,11 +93,16 @@ export default function ShippingManager({ couriers, shippingCompanies }: { couri
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            setCompanyError("");
             start(async () => {
               if (!companyName.trim()) return;
-              await createShippingCompany(companyName.trim(), companyPhone.trim() || undefined);
-              setCompanyName(""); setCompanyPhone("");
-              router.refresh();
+              try {
+                await createShippingCompany(companyName.trim(), companyPhone.trim() || undefined);
+                setCompanyName(""); setCompanyPhone("");
+                router.refresh();
+              } catch (err: any) {
+                setCompanyError(friendlyErrorMessage(err, "تعذر إضافة الشركة - البيانات لسه موجودة، جرب تاني"));
+              }
             });
           }}
           className="flex flex-wrap gap-2"
@@ -79,6 +111,7 @@ export default function ShippingManager({ couriers, shippingCompanies }: { couri
           <input value={companyPhone} onChange={(e) => setCompanyPhone(e.target.value)} placeholder="رقم الهاتف" className="border rounded px-3 py-2 text-sm flex-1 min-w-[120px]" />
           <button disabled={pending} className="bg-primary text-white rounded-lg px-4 py-2 text-sm shrink-0">إضافة</button>
         </form>
+        {companyError && <div className="text-red-600 text-xs">{companyError}</div>}
       </div>
     </div>
   );
