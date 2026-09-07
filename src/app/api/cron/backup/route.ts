@@ -16,6 +16,19 @@ export async function GET(req: NextRequest) {
 
   if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
     const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+    // الـ bucket "backups" لازم يكون موجود قبل أي رفع - لو مش موجود (أول تشغيل، أو اتمسح بالغلط)
+    // كان الرفع بيفشل من غير ما حد يلاحظ لحد ما يحتاج يرجع لنسخة احتياطية فيلاقي مفيش حاجة اتخزنت
+    // أصلًا. بننشئه تلقائيًا هنا لو مش موجود، بدل ما نحتاج خطوة يدوية في لوحة تحكم Supabase.
+    try {
+      const { data: existingBuckets } = await supabase.storage.listBuckets();
+      if (!existingBuckets?.some((b) => b.name === "backups")) {
+        await supabase.storage.createBucket("backups", { public: false });
+      }
+    } catch (e: any) {
+      return NextResponse.json({ ok: false, error: `تعذر إنشاء/التأكد من مكان تخزين النسخ الاحتياطية: ${e?.message || e}` }, { status: 500 });
+    }
+
     const { error } = await supabase.storage.from("backups").upload(filename, json, { contentType: "application/json" });
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
