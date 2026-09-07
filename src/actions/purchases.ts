@@ -18,9 +18,18 @@ export async function listSuppliers(search?: string) {
     .orderBy(schema.suppliers.name);
 }
 
+// "المستحق على المحل" لكل الموردين (اللي علينا ندفعهولهم) - المصدر الوحيد لحساب الرقم ده في كل
+// الشاشات (الداشبورد، الوضع المالي، شاشة الموردين). قبل كده كان الرقم ده بيتحسب بـ3 طرق مختلفة في
+// 3 ملفات مختلفة، وكل طريقة بترجع رقم مختلف عن التانية:
+//  - هنا: كانت بتستبعد الموردين الموقوفين (active فقط)، وبتجمع الأرصدة السالبة كمان (بتقلل الإجمالي)
+//  - في dashboard.ts: كانت بتحسب كل الموردين (نشط وموقوف)، وبتستبعد الأرصدة السالبة (Math.max 0)
+//  - في finance.ts: كانت بتحسب كل الموردين، وبتجمع الأرصدة السالبة كمان
+// دلوقتي طريقة واحدة بس: كل الموردين (موقوف أو نشط - إيقاف مورد مبيلغيش اللي علينا له فعليًا)، ورصيد
+// سالب (يعني إحنا دفعنا زيادة/ليه رصيد دائن عندنا) بيتجاهل بدل ما يقلل الإجمالي بالغلط - نفس المنطق
+// المستخدم بالظبط في حساب "المستحق لينا" من العملاء (totalReceivable).
 export async function getTotalSuppliersPayable() {
-  const rows = await db.select().from(schema.suppliers).where(eq(schema.suppliers.active, true));
-  return rows.reduce((s, r) => s + Number(r.balance), 0);
+  const rows = await db.select().from(schema.suppliers);
+  return rows.reduce((s, r) => s + Math.max(Number(r.balance), 0), 0);
 }
 
 export async function createSupplier(data: { name: string; phone?: string; notes?: string }) {

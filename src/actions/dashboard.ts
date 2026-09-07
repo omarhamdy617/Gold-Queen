@@ -3,6 +3,7 @@ import { db, schema } from "@/db";
 import { eq, gte, lte, and, sql, desc } from "drizzle-orm";
 import { requirePermission } from "@/lib/auth";
 import { cairoStartOfDay, cairoStartOfMonth } from "@/lib/time";
+import { getTotalSuppliersPayable } from "@/actions/purchases";
 
 export async function getDashboardData() {
   await requirePermission("dashboard.view");
@@ -58,11 +59,9 @@ export async function getDashboardData() {
   const customers = await db.select().from(schema.customers);
   const totalReceivable = customers.reduce((s, c) => s + Math.max(Number(c.balance), 0), 0);
 
-  const suppliers = await db.select().from(schema.suppliers);
-  // نفس منطق استبعاد الأرصدة السالبة المستخدم في totalReceivable بالظبط - مورد برصيد سالب معناه
-  // إحنا دافعينله زيادة عن المطلوب (سلفة/رصيد دائن ليه)، مش إحنا مديونين له أكتر، فمينفعش يتجمع
-  // كـ"مستحق علينا" لأنه بيقلل الإجمالي بالغلط بدل ما يتجاهل
-  const totalPayable = suppliers.reduce((s, s2) => s + Math.max(Number(s2.balance), 0), 0);
+  // بنستخدم نفس دالة "المستحق للموردين" المستخدمة في كل شاشة تانية (شاشة الموردين، الوضع المالي) -
+  // قبل كده كل شاشة كانت بتحسبه بطريقة شوية مختلفة عن التانية فكانت الأرقام مش متطابقة بين الشاشات.
+  const totalPayable = await getTotalSuppliersPayable();
 
   const stockRows = await db
     .select({ quantity: schema.stocks.quantity, avgCost: schema.products.avgCost })

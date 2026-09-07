@@ -2,6 +2,7 @@
 import { db, schema } from "@/db";
 import { sql, eq, gt } from "drizzle-orm";
 import { requirePermission } from "@/lib/auth";
+import { getTotalSuppliersPayable } from "@/actions/purchases";
 
 export async function getFinancialPosition() {
   await requirePermission("finance.view");
@@ -16,7 +17,15 @@ export async function getFinancialPosition() {
   const totalCustomerCredit = customers.reduce((s, c) => s + Math.max(-Number(c.balance), 0), 0);
 
   const suppliers = await db.select().from(schema.suppliers);
-  const totalPayable = suppliers.reduce((s, s2) => s + Number(s2.balance), 0);
+  // بنستخدم نفس دالة "المستحق للموردين" المستخدمة في كل شاشة تانية (شاشة الموردين، الداشبورد) - قبل
+  // كده كل شاشة كانت بتحسبه بطريقة مختلفة شوية عن التانية (هنا كانت بتجمع الأرصدة السالبة كمان، في
+  // شاشات تانية كانت بتستبعدها أو بتستبعد الموردين الموقوفين) فكانت الأرقام بتختلف من شاشة لشاشة.
+  const totalPayable = await getTotalSuppliersPayable();
+  // فلوس المفروض الموردين يردّوها لينا (رصيدهم سالب - دفعنالهم زيادة أو رجّعنالهم بضاعة وليهم رصيد
+  // دائن عندنا) - ده أصل حقيقي لينا. قبل كده كان بيتحسب ضمنيًا جوه totalPayable نفسه (بجمع الأرصدة
+  // السالبة، وده بيقلل المطروح في صافي الوضع المالي بنفس الأثر) - دلوقتي بعد ما totalPayable بقى
+  // بيستبعد الأرصدة السالبة (زي totalReceivable بالظبط)، لازم نضيفه صراحةً كبند مستقل في الصافي.
+  const totalSupplierCredit = suppliers.reduce((s, s2) => s + Math.max(-Number(s2.balance), 0), 0);
 
   const consignments = await db.select().from(schema.consignments);
   const totalConsignmentValue = consignments.reduce((s, c) => s + Number(c.balance), 0);
@@ -83,6 +92,7 @@ export async function getFinancialPosition() {
     totalReceivable,
     totalCustomerCredit,
     totalPayable,
+    totalSupplierCredit,
     totalConsignmentValue,
     consignmentCostValue,
     inventoryValue,
@@ -98,7 +108,8 @@ export async function getFinancialPosition() {
       inventoryValue +
       consignmentCostValue +
       inProgressCostValue +
-      totalLoanReceivable -
+      totalLoanReceivable +
+      totalSupplierCredit -
       totalPayable -
       totalCustomerCredit -
       totalLoanPayable,
