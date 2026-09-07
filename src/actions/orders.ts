@@ -2,7 +2,7 @@
 import { db, schema } from "@/db";
 import { eq, desc, and, or, ilike, gte, sql } from "drizzle-orm";
 import { requirePermission, requireAnyPermission, requireSession, requireAdminRole, logAudit, genCode } from "@/lib/auth";
-import { adjustStock, stockShortageMessage, postCashByPaymentMethod } from "@/lib/ops";
+import { adjustStock, stockShortageMessage, postCashByPaymentMethod, updateCustomerBalance } from "@/lib/ops";
 import { inArray } from "drizzle-orm";
 import { toActionError } from "@/lib/actionError";
 import { normalizePhone } from "@/lib/phone";
@@ -499,6 +499,36 @@ async function updateOrderStatusInner(
       for (const item of items) {
         if (order.locationId) await adjustStock(tx, item.productId, order.locationId, item.quantity);
       }
+
+      // لو الأوردر ده كان اتسلّم وحُصّل فعلًا (معاه فاتورة مرتبطة اتعملت وقت "تم التسليم")، إرجاعه
+      // دلوقتي كان قبل كده بيرجّع المخزون بس ويسيب الفاتورة والفلوس المحصّلة زي ما هي بالظبط - يعني
+      // التقارير المالية والداشبورد كانوا لسه شايفين المبيعة دي "قايمة ومحصّلة" رغم إن البضاعة رجعت
+      // فعليًا والعميل المفروض ياخد فلوسه (أو تتخصم من حسابه). دلوقتي بنعكس نفس أثر "حذف الفاتورة"
+      // (فلوس + رصيد العميل) بالظبط - بدون لمس المخزون تاني (اتعالج فوق أصلًا في نفس الخطوة).
+      if (order.invoiceId) {
+        const [invoice] = await tx.select().from(schema.salesInvoices).where(eq(schema.salesInvoices.id, order.invoiceId)).for("update");
+        if (invoice) {
+          const unpaid = Number(invoice.total) - Number(invoice.paidAmount);
+          if (unpaid !== 0 && invoice.customerId) {
+            await updateCustomerBalance(tx, invoice.customerId, -unpaid);
+          }
+          if (Number(invoice.paidAmount) > 0 && invoice.paymentMethodId) {
+            await postCashByPaymentMethod(tx, invoice.paymentMethodId, "RETURN_OUT", Number(invoice.paidAmount), {
+              note: `إرجاع أوردر ${order.code} - عكس تحصيل الفاتورة ${invoice.code}`,
+              refType: "Order",
+              refId: orderId,
+              createdById: session.userId,
+            });
+          }
+          // لازم نصفّر orders.invoice_id فعليًا في قاعدة البيانات الأول (استعلام UPDATE منفصل، مش بس
+          // في متغير payload اللي هيتحفظ في الآخر) قبل ما نمسح صف الفاتورة نفسه - وإلا الحذف هيترفض
+          // فورًا بخطأ foreign key لأن صف الأوردر لسه بيشاور فعليًا على فاتورة بنحاول نمسحها.
+          payload.invoiceId = null;
+          await tx.update(schema.orders).set({ invoiceId: null }).where(eq(schema.orders.id, orderId));
+          await tx.delete(schema.salesInvoiceItems).where(eq(schema.salesInvoiceItems.invoiceId, invoice.id));
+          await tx.delete(schema.salesInvoices).where(eq(schema.salesInvoices.id, invoice.id));
+        }
+      }
     }
     await tx.update(schema.orders).set(payload).where(eq(schema.orders.id, orderId));
   });
@@ -793,20 +823,26 @@ async function updateOrderDetailsInner(orderId: string, input: Parameters<typeof
 
 // معاينة بس (من غير أي تعديل) لآخر حالة كان عليها الأوردر - بتستخدمها الواجهة عشان تعرض للأدمن
 // "هيرجع لحالة إيه" على زرار التراجع قبل ما يدوس عليه، ولو مفيش حاجة يرجعلها بترجع null
-export async function getRevertPreviewStatus(orderId: string) {
+// آخر سجل تدقيق فعلي على الأوردر ده - من ضمن التغييرات الجوهرية *و* "تراجع" سابق مع بعض، عشان لو
+// آخر حاجة حصلت فعليًا كانت "تراجع" بالفعل، نعرف إن مفيش حاجة تانية نرجعها ونخفي الزرار. قبل كده
+// كان بيدوّر بس على أفعال التغيير (CONFIRM/ASSIGN_LOCATION/...) وبيتجاهل "REVERT_STATUS" تمامًا -
+// فكان بيلاقي نفس آخر تغيير حقيقي حتى بعد ما يترجع بالفعل، والزرار كان فاضل ظاهر وقابل للدوس تاني
+// على نفس السجل القديم (ده اللي كان بيسبب تراجع مكرر على نفس العملية - راجع revertOrderStatusInner).
+const STATUS_ACTIONS = ["CONFIRM", "ASSIGN_LOCATION", "SHIP", "UPDATE", "CANCEL"];
+async function getLastOrderStatusLog(orderId: string) {
   const [lastLog] = await db
-    .select({ before: schema.auditLogs.before })
+    .select()
     .from(schema.auditLogs)
-    .where(
-      and(
-        eq(schema.auditLogs.entityType, "Order"),
-        eq(schema.auditLogs.entityId, orderId),
-        inArray(schema.auditLogs.action, ["CONFIRM", "ASSIGN_LOCATION", "SHIP", "UPDATE", "CANCEL"])
-      )
-    )
+    .where(and(eq(schema.auditLogs.entityType, "Order"), eq(schema.auditLogs.entityId, orderId), inArray(schema.auditLogs.action, [...STATUS_ACTIONS, "REVERT_STATUS"])))
     .orderBy(desc(schema.auditLogs.createdAt))
     .limit(1);
-  const before = lastLog?.before as any;
+  return lastLog;
+}
+
+export async function getRevertPreviewStatus(orderId: string) {
+  const lastLog = await getLastOrderStatusLog(orderId);
+  if (!lastLog || lastLog.action === "REVERT_STATUS") return null;
+  const before = lastLog.before as any;
   return before?.status || null;
 }
 
@@ -826,14 +862,16 @@ async function revertOrderStatusInner(orderId: string) {
   await requireAdminRole();
   const session = await requireSession();
 
-  const STATUS_ACTIONS = ["CONFIRM", "ASSIGN_LOCATION", "SHIP", "UPDATE", "CANCEL"];
-  const [lastLog] = await db
-    .select()
-    .from(schema.auditLogs)
-    .where(and(eq(schema.auditLogs.entityType, "Order"), eq(schema.auditLogs.entityId, orderId), inArray(schema.auditLogs.action, STATUS_ACTIONS)))
-    .orderBy(desc(schema.auditLogs.createdAt))
-    .limit(1);
+  // كان بيدوّر بس على آخر سجل من أفعال التغيير (من غير ما يعتبر "REVERT_STATUS")، فكان ممكن تدوس
+  // "تراجع" مرتين على نفس العملية (مرة بعد الصفحة بتتحدّث، أو ضغط تاني بعدين): المرة التانية كانت
+  // بتلاقي *نفس* السجل القديم تاني وتحاول تعكس نفس الأثر مرة كمان - في حالة الإلغاء (CANCEL) بالذات
+  // ده كان بيسبب خصم كمية من المخزون مرتين فعليًا (تلف بيانات مخزون صامت، من غير أي رسالة خطأ).
+  // دلوقتي لو آخر حاجة حصلت فعليًا للأوردر ده كانت "تراجع" بالفعل، بنرفض من الأول بدل ما نعيد التنفيذ.
+  const lastLog = await getLastOrderStatusLog(orderId);
   if (!lastLog) throw new Error("مفيش سجل تغيير حالة سابق للأوردر ده عشان نرجع له");
+  if (lastLog.action === "REVERT_STATUS") {
+    throw new Error("آخر عملية اتسجلت على الأوردر ده كانت تراجع بالفعل - مفيش حاجة تانية نرجعها تلقائيًا");
+  }
   const before = lastLog.before as any;
   if (!before || !before.status) throw new Error("سجل التدقيق ده مبيحتويش على حالة سابقة صالحة للرجوع ليها");
 
@@ -877,6 +915,13 @@ async function revertOrderStatusInner(orderId: string) {
               createdById: session.userId,
             });
           }
+          // لازم نصفّر orders.invoice_id فعليًا في قاعدة البيانات (UPDATE منفصل) قبل ما نمسح صف
+          // الفاتورة - قبل كده كان بيتصفر بس في متغير payload اللي بيتحفظ في آخر الترانزاكشن، يعني
+          // وقت تنفيذ DELETE على sales_invoices، صف الأوردر كان لسه بيشاور عليها فعليًا في قاعدة
+          // البيانات، فالحذف كان بيترفض دايمًا بخطأ foreign key - يعني التراجع عن تسليم محصّل كان
+          // فاشل 100% من المرة الأولى (مش بس حالة نادرة)، والأدمن كان بياخد رسالة خطأ عامة مكانش
+          // واضح منها السبب.
+          await tx.update(schema.orders).set({ invoiceId: null }).where(eq(schema.orders.id, orderId));
           await tx.delete(schema.salesInvoiceItems).where(eq(schema.salesInvoiceItems.invoiceId, invoice.id));
           await tx.delete(schema.salesInvoices).where(eq(schema.salesInvoices.id, invoice.id));
         }

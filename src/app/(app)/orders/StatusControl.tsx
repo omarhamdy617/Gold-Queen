@@ -6,6 +6,11 @@ import { friendlyErrorMessage } from "@/lib/errors";
 import { isActionError } from "@/lib/actionError";
 import { ORDER_STATUS_TRANSITIONS, ORDER_STATUS_LABELS as LABELS, ORDER_STATUS_COLORS as COLORS, ORDER_ATTEMPT_RESULT_LABELS } from "@/lib/orderStatus";
 
+// حالة تحصيل الأوردر المسجّلة فعليًا في قاعدة البيانات (مش خانة الفورم المحلية اللي اسمها قريب منها
+// جوه الكومبوننت) - عشان نعرف لو الأوردر اتسلّم من غير تحصيل، ونظهر زرار "سجّل التحصيل الآن". قبل
+// كده مكانش فيه أي طريقة في الواجهة تسجّل تحصيل أوردر اتسلّم بالفعل بـ"لسه ما اتحصلش" - كان بيفضل
+// كده للأبد، رغم إن السيرفر نفسه فعليًا بيدعم تسجيل التحصيل ده لاحقًا (اختيار نفس الحالة "تم
+// التسليم" تاني وبعتلها بيانات التحصيل).
 export default function StatusControl({
   orderId,
   status,
@@ -13,6 +18,7 @@ export default function StatusControl({
   canConfirm = false,
   paymentMethods = [],
   confirmationAttempts = 0,
+  orderCollectionStatus,
 }: {
   orderId: string;
   status: string;
@@ -20,6 +26,7 @@ export default function StatusControl({
   canConfirm?: boolean;
   paymentMethods?: { id: string; name: string }[];
   confirmationAttempts?: number;
+  orderCollectionStatus?: "PENDING" | "COLLECTED" | null;
 }) {
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -203,7 +210,7 @@ export default function StatusControl({
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-1 items-start">
       <select
         value={status}
         disabled={pending}
@@ -212,6 +219,15 @@ export default function StatusControl({
       >
         {allowedOptions.map((k) => <option key={k} value={k}>{LABELS[k]}</option>)}
       </select>
+      {status === "DELIVERED" && orderCollectionStatus === "PENDING" && (
+        <button
+          disabled={pending}
+          onClick={() => { setCollectionStatus("COLLECTED"); setPendingStatus("DELIVERED"); }}
+          className="text-[11px] text-amber-700 underline w-fit"
+        >
+          💰 سجّل التحصيل الآن
+        </button>
+      )}
       {error && <div className="text-red-600 text-[11px]">{error}</div>}
     </div>
   );

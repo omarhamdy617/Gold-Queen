@@ -92,7 +92,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                 <td>{sourceLabel(o.source)}</td>
                 <td className="text-xs">{o.shippingMethod ? `${shipLabel(o.shippingMethod)} - ${o.courierName || o.shippingCompanyName || ""}` : "-"}</td>
                 <td className="font-semibold">{money(o.total)}</td>
-                <td><StatusControl orderId={o.id} status={o.status} canEdit={canShip} canConfirm={canConfirm} paymentMethods={paymentMethods} confirmationAttempts={o.confirmationAttempts} /></td>
+                <td><StatusControl orderId={o.id} status={o.status} canEdit={canShip} canConfirm={canConfirm} paymentMethods={paymentMethods} confirmationAttempts={o.confirmationAttempts} orderCollectionStatus={o.collectionStatus} /></td>
                 <td className="text-xs">{dateAr(o.createdAt)}</td>
                 {canManageStatus && (
                   <td className="p-2">
