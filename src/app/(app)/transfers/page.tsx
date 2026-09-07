@@ -1,15 +1,15 @@
 import { listTransfers } from "@/actions/transfers";
-import { listProductsWithStock, listLocations } from "@/actions/products";
+import { listLocations } from "@/actions/products";
 import { dateAr } from "@/lib/format";
 import TransferForm from "./TransferForm";
 import Link from "next/link";
 
 export default async function TransfersPage() {
-  const [transfers, products, locations] = await Promise.all([listTransfers(), listProductsWithStock(), listLocations()]);
+  const [transfers, locations] = await Promise.all([listTransfers(), listLocations()]);
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">التحويلات الداخلية (محل ↔ مخزن)</h1>
-      <TransferForm products={products} locations={locations} />
+      <TransferForm locations={locations} />
       <div className="app-card overflow-x-auto">
         <table className="w-full text-sm text-right">
           <thead>
