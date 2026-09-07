@@ -50,7 +50,7 @@ export default async function CustomersPage({
                 <td>{c.phone}</td>
                 <td>{c.type === "TRADER" ? money(c.creditLimit) : "-"}</td>
                 <td className={Number(c.balance) > 0 ? "text-red-600 font-bold" : ""}>{money(c.balance)}</td>
-                <td><Link href={`/customers/${c.id}`} className="text-gold text-xs">كشف حساب</Link></td>
+                <td><Link href={`/customers/${c.id}`} prefetch={false} className="text-gold text-xs">كشف حساب</Link></td>
               </tr>
             ))}
             {customers.length === 0 && (
