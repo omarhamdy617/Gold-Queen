@@ -1,15 +1,14 @@
 import { listPurchases, listSuppliers } from "@/actions/purchases";
-import { listProductsWithStock, listLocations } from "@/actions/products";
+import { listLocations } from "@/actions/products";
 import { listPaymentMethods } from "@/actions/cash";
 import { money, dateAr } from "@/lib/format";
 import Link from "next/link";
 import PurchaseForm from "./PurchaseForm";
 
 export default async function PurchasesPage() {
-  const [purchases, suppliers, products, locations, paymentMethods] = await Promise.all([
+  const [purchases, suppliers, locations, paymentMethods] = await Promise.all([
     listPurchases(),
     listSuppliers(),
-    listProductsWithStock(),
     listLocations(),
     listPaymentMethods(),
   ]);
@@ -17,7 +16,7 @@ export default async function PurchasesPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">المشتريات</h1>
-      <PurchaseForm suppliers={suppliers} products={products} locations={locations} paymentMethods={paymentMethods} />
+      <PurchaseForm suppliers={suppliers} locations={locations} paymentMethods={paymentMethods} />
       <div className="app-card overflow-x-auto">
         <table className="w-full text-sm text-right">
           <thead>
