@@ -1,6 +1,8 @@
 "use client";
 import { useState, useTransition } from "react";
 import { createOrder, checkDuplicateOrder } from "@/actions/orders";
+import { listProductsWithStock } from "@/actions/products";
+import { listCustomers } from "@/actions/customers";
 import { useRouter } from "next/navigation";
 import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
 import { EGYPT_GOVERNORATES } from "@/lib/governorates";
@@ -9,9 +11,16 @@ import { isActionError } from "@/lib/actionError";
 import ProductSearchSelect from "@/components/ProductSearchSelect";
 import { money, dateAr } from "@/lib/format";
 
-export default function OrderForm({ products, customers: initialCustomers, locations }: any) {
-  const [customers] = useState<SimpleCustomer[]>(initialCustomers);
+// المنتجات والعملاء بقوا بيتجابوا بس لما الفورم ده يتفتح فعليًا (مش مع كل تحميل لصفحة الأوردرات
+// زي قبل كده) - ده كان أكبر سبب في بطء صفحة الأوردرات: كل مرة أي حد يغيّر حالة أوردر، الصفحة
+// كلها كانت بتتحدث وبتجيب كل المنتجات وكل العملاء تاني من غير داعي حتى لو الفورم ده مقفول أصلًا.
+export default function OrderForm({ locations }: any) {
   const [open, setOpen] = useState(false);
+  const [loadingData, setLoadingData] = useState(false);
+  const [dataError, setDataError] = useState("");
+  const [products, setProducts] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<SimpleCustomer[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
   const [error, setError] = useState("");
@@ -31,7 +40,40 @@ export default function OrderForm({ products, customers: initialCustomers, locat
   const [discount, setDiscount] = useState("");
   const [duplicateWarning, setDuplicateWarning] = useState<{ code: string; createdAt: string } | null>(null);
 
-  if (!open) return <button onClick={() => setOpen(true)} className="bg-gold text-white rounded-lg px-4 py-2 text-sm">+ أوردر جديد</button>;
+  async function openForm() {
+    setOpen(true);
+    if (loaded) return; // اتحمّلوا قبل كده في نفس الزيارة - مفيش داعي نجيبهم تاني
+    setLoadingData(true);
+    setDataError("");
+    try {
+      const [prods, custs] = await Promise.all([listProductsWithStock(), listCustomers()]);
+      setProducts(prods as any[]);
+      setCustomers(custs as any as SimpleCustomer[]);
+      setLoaded(true);
+    } catch (e: any) {
+      setDataError(friendlyErrorMessage(e, "تعذر تحميل بيانات المنتجات/العملاء"));
+    } finally {
+      setLoadingData(false);
+    }
+  }
+
+  if (!open) return <button onClick={openForm} className="bg-gold text-white rounded-lg px-4 py-2 text-sm">+ أوردر جديد</button>;
+
+  if (loadingData) {
+    return (
+      <div className="app-card p-4 text-sm text-muted">جارٍ تحميل بيانات المنتجات والعملاء...</div>
+    );
+  }
+
+  if (dataError) {
+    return (
+      <div className="app-card p-4 space-y-2">
+        <div className="text-red-600 text-sm">{dataError}</div>
+        <button onClick={openForm} className="text-sm text-gold">حاول تاني</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-muted text-sm mr-3">إلغاء</button>
+      </div>
+    );
+  }
 
   const validItems = lines.filter((l) => l.productId && l.quantity && parseInt(l.quantity) > 0);
   const subtotal = validItems.reduce((s, l) => s + parseInt(l.quantity || "0") * parseFloat(l.unitPrice || "0"), 0);
