@@ -84,7 +84,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
             {orders.map((o) => (
               <tr key={o.id} className="border-b last:border-0 align-top">
                 <td className="p-3 font-mono text-xs">
-                  <Link href={`/orders/${o.id}`} className="text-primary underline">{o.code}</Link>
+                  <Link href={`/orders/${o.id}`} prefetch={false} className="text-primary underline">{o.code}</Link>
                 </td>
                 <td>{o.customerName || "-"}</td>
                 <td className="text-xs">{o.customerPhone}{o.customerPhone2 ? ` / ${o.customerPhone2}` : ""}</td>
