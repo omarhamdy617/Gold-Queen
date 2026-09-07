@@ -32,7 +32,7 @@ export default async function QuotesPage() {
                 <td>{q.customerName || "-"}</td>
                 <td>{money(q.total)}</td>
                 <td>{dateAr(q.createdAt)}</td>
-                <td><Link href={`/quotes/${q.id}`} className="text-gold text-xs">عرض</Link></td>
+                <td><Link href={`/quotes/${q.id}`} prefetch={false} className="text-gold text-xs">عرض</Link></td>
               </tr>
             ))}
           </tbody>
