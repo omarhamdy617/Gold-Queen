@@ -4,6 +4,7 @@ import { giveConsignment } from "@/actions/consignments";
 import { useRouter } from "next/navigation";
 import { isActionError } from "@/lib/actionError";
 import { friendlyErrorMessage } from "@/lib/errors";
+import ProductSearchSelect from "@/components/ProductSearchSelect";
 
 export default function ConsignmentForm({ employees, products, locations }: any) {
   const [open, setOpen] = useState(false);
@@ -28,13 +29,15 @@ export default function ConsignmentForm({ employees, products, locations }: any)
       </div>
       {lines.map((line, idx) => (
         <div key={idx} className="grid sm:grid-cols-3 gap-2">
-          <select value={line.productId} onChange={(e) => {
-            const p = products.find((p: any) => p.id === e.target.value);
-            const next = [...lines]; next[idx] = { ...next[idx], productId: e.target.value, unitPrice: p?.retailPrice || "" }; setLines(next);
-          }} className="border rounded px-2 py-1.5 text-sm">
-            <option value="">اختر منتج</option>
-            {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          <ProductSearchSelect
+            products={products}
+            value={line.productId}
+            locationId={locationId}
+            onChange={(productId) => {
+              const p = products.find((p: any) => p.id === productId);
+              const next = [...lines]; next[idx] = { ...next[idx], productId, unitPrice: p?.retailPrice || "" }; setLines(next);
+            }}
+          />
           <input type="number" placeholder="الكمية" value={line.quantity} onChange={(e) => {
             const next = [...lines]; next[idx].quantity = e.target.value; setLines(next);
           }} className="border rounded px-2 py-1.5 text-sm" />

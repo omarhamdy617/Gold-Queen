@@ -395,23 +395,31 @@ export const consignments = pgTable("consignments", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const consignmentItems = pgTable("consignment_items", {
-  id: cuid(),
-  consignmentId: text("consignment_id")
-    .notNull()
-    .references(() => consignments.id),
-  productId: text("product_id")
-    .notNull()
-    .references(() => products.id),
-  quantity: integer("quantity").notNull(),
-  unitPrice: money("unit_price").notNull(),
-  returnedQty: integer("returned_qty").notNull().default(0),
-  // الكمية اللي اتباعت فعليًا من العهدة دي لعميل حقيقي (بيع من عهدة الموظف) - منفصلة عن returnedQty
-  // (اللي بترجع فعليًا للمخزون). المتبقي فعليًا مع الموظف = quantity - returnedQty - soldQty
-  soldQty: integer("sold_qty").notNull().default(0),
-  settledAmount: money("settled_amount").notNull().default("0"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const consignmentItems = pgTable(
+  "consignment_items",
+  {
+    id: cuid(),
+    consignmentId: text("consignment_id")
+      .notNull()
+      .references(() => consignments.id),
+    productId: text("product_id")
+      .notNull()
+      .references(() => products.id),
+    quantity: integer("quantity").notNull(),
+    unitPrice: money("unit_price").notNull(),
+    returnedQty: integer("returned_qty").notNull().default(0),
+    // الكمية اللي اتباعت فعليًا من العهدة دي لعميل حقيقي (بيع من عهدة الموظف) - منفصلة عن returnedQty
+    // (اللي بترجع فعليًا للمخزون). المتبقي فعليًا مع الموظف = quantity - returnedQty - soldQty
+    soldQty: integer("sold_qty").notNull().default(0),
+    settledAmount: money("settled_amount").notNull().default("0"),
+    // إيصال استلام إلكتروني - تأكيد إن الموظف فعلًا استلم الصنف ده (بدل ما نعتمد بس على كلام
+    // اللي سجّل العهدة في السيستم). NULL يعني لسه محدش أكد الاستلام.
+    receivedConfirmedAt: timestamp("received_confirmed_at"),
+    receivedConfirmedById: text("received_confirmed_by_id").references(() => users.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("consign_item_consignment_idx").on(t.consignmentId)]
+);
 
 // --------------------------------------------------------------------------
 // SALES INVOICES

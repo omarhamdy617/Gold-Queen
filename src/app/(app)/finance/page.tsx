@@ -17,8 +17,19 @@ export default async function FinancePage() {
         <Card label="بضاعة عند الموظفين بالتكلفة (عهدة)" value={money(f.consignmentCostValue)} color="bg-purple-600" />
         <Card label="سلف مستحقة لي" value={money(f.totalLoanReceivable)} color="bg-teal-600" />
         <Card label="سلف عليّ (مديون بيها)" value={money(f.totalLoanPayable)} color="bg-rose-600" />
-        <Card label="أوردرات في الطريق" value={num(f.inTransitCount)} color="bg-neutral-700" />
+        <Card label="بضاعة الأوردرات الجارية بالتكلفة (قيد التجهيز + في الشحن)" value={money(f.inProgressCostValue)} color="bg-cyan-700" />
+        <Card label="أوردرات جارية (قيد التجهيز + في الشحن)" value={num(f.inTransitCount)} color="bg-neutral-700" />
         <Card label="صافي الوضع المالي التقديري" value={money(f.netPosition)} color="bg-gold" wide />
+      </div>
+
+      <div className="app-card p-4 bg-neutral-50">
+        <div className="text-sm text-muted">
+          العائد المتوقع (إجمالي البيع) لو كل الأوردرات الجارية دلوقتي (قيد التجهيز + في الشحن) اتسلمت وتحصّلت بالكامل
+        </div>
+        <div className="text-2xl font-bold mt-1">{money(f.inProgressExpectedRevenue)}</div>
+        <div className="text-xs text-muted mt-1">
+          ده رقم استرشادي بس (مش مضمون ومش داخل في صافي الوضع المالي فوق) - بيوريك لو كل حاجة اتسلمت النهارده هتدخل الخزينة قد إيه
+        </div>
       </div>
 
       <div className="app-card p-4">

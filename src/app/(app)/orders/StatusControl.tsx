@@ -11,7 +11,6 @@ export default function StatusControl({
   status,
   canEdit = true,
   canConfirm = false,
-  customerPhone,
   paymentMethods = [],
   confirmationAttempts = 0,
 }: {
@@ -19,7 +18,6 @@ export default function StatusControl({
   status: string;
   canEdit?: boolean;
   canConfirm?: boolean;
-  customerPhone?: string;
   paymentMethods?: { id: string; name: string }[];
   confirmationAttempts?: number;
 }) {
@@ -29,7 +27,6 @@ export default function StatusControl({
   const [collectionStatus, setCollectionStatus] = useState<"PENDING" | "COLLECTED">("COLLECTED");
   const [collectedAmount, setCollectedAmount] = useState("");
   const [paymentMethodId, setPaymentMethodId] = useState(paymentMethods[0]?.id || "");
-  const [confirmPhone, setConfirmPhone] = useState("");
   const [returnReason, setReturnReason] = useState("");
   const [cancelReason, setCancelReason] = useState("");
   const [attemptResult, setAttemptResult] = useState("NO_ANSWER");
@@ -149,9 +146,6 @@ export default function StatusControl({
   function confirmSpecial() {
     setError("");
     if (pendingStatus === "DELIVERED") {
-      const digits = confirmPhone.replace(/\D/g, "");
-      if (digits.length !== 11) return setError("رقم تأكيد العميل لازم يبقى 11 رقم بالظبط");
-      if (customerPhone && digits !== customerPhone.replace(/\D/g, "")) return setError("رقم الهاتف اللي كتبته مش مطابق لرقم العميل المسجل في الأوردر");
       if (collectionStatus === "COLLECTED" && (!collectedAmount || parseFloat(collectedAmount) < 0)) {
         return setError("أدخل المبلغ المحصّل (سعر الأوردر)");
       }
@@ -176,14 +170,6 @@ export default function StatusControl({
       <div className="bg-neutral-50 border rounded-lg p-2 space-y-2 min-w-[220px]">
         {pendingStatus === "DELIVERED" && (
           <>
-            <div className="text-xs font-semibold">تأكيد رقم هاتف العميل (11 رقم)</div>
-            <input
-              maxLength={11}
-              placeholder="01xxxxxxxxx"
-              value={confirmPhone}
-              onChange={(e) => setConfirmPhone(e.target.value.replace(/\D/g, ""))}
-              className="border rounded px-2 py-1 text-xs w-full"
-            />
             <div className="text-xs font-semibold">حالة التحصيل؟</div>
             <select value={collectionStatus} onChange={(e) => setCollectionStatus(e.target.value as any)} className="border rounded px-2 py-1 text-xs w-full">
               <option value="COLLECTED">تم التحصيل</option>

@@ -47,11 +47,25 @@ export async function getFinancialPosition() {
     byLocation[r.locationId].value += value;
   }
 
-  // البضاعة في الطريق (أوردرات مشحونة ولسه معلقة)
-  const inTransitOrders = await db
-    .select()
+  // بضاعة الأوردرات الجارية (قيد التجهيز + في الشحن): المخزون بتاعها بيتخصم فعليًا من جدول
+  // المخازن لحظة ما الأوردر يتحدد له مكان تجهيز (يدخل "قيد التجهيز") - مش بس وقت الشحن الفعلي.
+  // قبل التعديل ده، الرقم ده كان بيختفي تمامًا من "الوضع المالي" من لحظة الحجز لحد التسليم الفعلي -
+  // يعني أصل حقيقي (بضاعة محجوزة/في الطريق) ضايع من الحسابات لمدة يوم لتلاتة (فترة التجهيز+الشحن).
+  const inProgressItemRows = await db
+    .select({ quantity: schema.orderItems.quantity, avgCost: schema.products.avgCost })
+    .from(schema.orderItems)
+    .innerJoin(schema.orders, eq(schema.orderItems.orderId, schema.orders.id))
+    .innerJoin(schema.products, eq(schema.orderItems.productId, schema.products.id))
+    .where(sql`${schema.orders.status} IN ('PREPARING','SHIPPED')`);
+  const inProgressCostValue = inProgressItemRows.reduce((s, r) => s + r.quantity * Number(r.avgCost), 0);
+
+  // العائد المتوقع (إجمالي البيع المتوقع تحصيله) لو كل الأوردرات الجارية دي اتسلمت وتحصّلت بالكامل -
+  // رقم استرشادي/معلوماتي بس ومش بيدخل في صافي الوضع المالي (لسه مش مضمون لحد ما يتسلم فعليًا).
+  const inProgressOrders = await db
+    .select({ id: schema.orders.id, total: schema.orders.total })
     .from(schema.orders)
-    .where(eq(schema.orders.status, "SHIPPED"));
+    .where(sql`${schema.orders.status} IN ('PREPARING','SHIPPED')`);
+  const inProgressExpectedRevenue = inProgressOrders.reduce((s, o) => s + Number(o.total), 0);
 
   // حسابات السلف: رصيد موجب = فلوس ليّا (مستحقة لي)، رصيد سالب = فلوس عليّا (مديون بيها) -
   // قبل كده حسابات السلف كانت متجاهلة تمامًا من "الوضع المالي" رغم إنها فلوس حقيقية داخلة/خارجة.
@@ -69,7 +83,9 @@ export async function getFinancialPosition() {
     consignmentCostValue,
     inventoryValue,
     byLocation: Object.values(byLocation),
-    inTransitCount: inTransitOrders.length,
+    inTransitCount: inProgressOrders.length,
+    inProgressCostValue,
+    inProgressExpectedRevenue,
     totalLoanReceivable,
     totalLoanPayable,
     netPosition:
@@ -77,6 +93,7 @@ export async function getFinancialPosition() {
       totalReceivable +
       inventoryValue +
       consignmentCostValue +
+      inProgressCostValue +
       totalLoanReceivable -
       totalPayable -
       totalCustomerCredit -

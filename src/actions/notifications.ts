@@ -51,5 +51,26 @@ export async function getAlertsSummary(): Promise<AlertItem[]> {
   if (stalePending > 0) alerts.push({ label: `${stalePending} أوردر لسه في الانتظار من غير تأكيد من أكتر من يوم`, count: stalePending, href: "/orders?status=PENDING" });
   if (staleInProgress > 0) alerts.push({ label: `${staleInProgress} أوردر واقف من غير شحن من أكتر من يومين`, count: staleInProgress, href: "/orders?status=PREPARING" });
 
+  // عهدة قديمة قاعدة مع موظف من غير ما ترجع أو تتباع - قبل كده مفيش أي تنبيه بيربط على "من إمتى"
+  // البضاعة دي مع الموظف، يعني ممكن تقعد شهور من غير ما حد ياخد باله إنها لسه معلقة
+  const pendingConsignmentItems = await db
+    .select({
+      consignmentId: schema.consignmentItems.consignmentId,
+      createdAt: schema.consignmentItems.createdAt,
+      quantity: schema.consignmentItems.quantity,
+      returnedQty: schema.consignmentItems.returnedQty,
+      soldQty: schema.consignmentItems.soldQty,
+    })
+    .from(schema.consignmentItems);
+  const staleConsignmentDayMs = 21 * dayMs; // 3 أسابيع
+  const staleConsignmentIds = new Set<string>();
+  for (const r of pendingConsignmentItems) {
+    if (r.quantity - r.returnedQty - r.soldQty <= 0) continue;
+    if (now - new Date(r.createdAt).getTime() > staleConsignmentDayMs) staleConsignmentIds.add(r.consignmentId);
+  }
+  if (staleConsignmentIds.size > 0) {
+    alerts.push({ label: `${staleConsignmentIds.size} عهدة فيها بضاعة قديمة (أكتر من 3 أسابيع) لسه معلقة`, count: staleConsignmentIds.size, href: "/consignments" });
+  }
+
   return alerts;
 }

@@ -1,6 +1,7 @@
 "use server";
 import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { requirePermission, requireSession, logAudit, genCode } from "@/lib/auth";
 import { adjustStock, updateConsignmentBalance, postCashByPaymentMethod, stockShortageMessage, checkConsignmentLimit } from "@/lib/ops";
 import { toActionError } from "@/lib/actionError";
@@ -24,8 +25,33 @@ export async function listConsignments() {
       holderId: schema.users.id,
     })
     .from(schema.consignments)
-    .innerJoin(schema.users, eq(schema.consignments.holderId, schema.users.id));
+    .innerJoin(schema.users, eq(schema.consignments.holderId, schema.users.id))
+    // كانت من غير حد أقصى للسطور - مش مشكلة دلوقتي بعدد الموظفين الحالي، لكن سقف أمان يمنع
+    // الشاشة من التقيل لو عدد العهد كبر كتير مستقبلًا (نفس أسلوب listOrders/listSales بالظبط)
+    .limit(500);
   return rows;
+}
+
+// عمر أقدم صنف لسه متبقي (مش راجع ولا اتباع بالكامل) لكل عهدة - عشان نقدر نبني تنبيه/شارة
+// "عهدة قديمة" بدل ما البضاعة تقعد شهور مع موظف من غير ما حد ياخد باله
+export async function getOldestPendingItemAge() {
+  await requirePermission("consignments.manage");
+  const rows = await db
+    .select({
+      consignmentId: schema.consignmentItems.consignmentId,
+      createdAt: schema.consignmentItems.createdAt,
+      quantity: schema.consignmentItems.quantity,
+      returnedQty: schema.consignmentItems.returnedQty,
+      soldQty: schema.consignmentItems.soldQty,
+    })
+    .from(schema.consignmentItems);
+  const oldestByConsignment = new Map<string, Date>();
+  for (const r of rows) {
+    if (r.quantity - r.returnedQty - r.soldQty <= 0) continue;
+    const current = oldestByConsignment.get(r.consignmentId);
+    if (!current || new Date(r.createdAt) < current) oldestByConsignment.set(r.consignmentId, new Date(r.createdAt));
+  }
+  return Object.fromEntries(oldestByConsignment);
 }
 
 export async function giveConsignment(input: {
@@ -135,6 +161,7 @@ async function settleConsignmentInner(consignmentId: string, amount: number, pay
 
 export async function getConsignmentItems(consignmentId: string) {
   await requirePermission("consignments.manage");
+  const confirmedBy = alias(schema.users, "confirmed_by");
   const rows = await db
     .select({
       id: schema.consignmentItems.id,
@@ -144,11 +171,35 @@ export async function getConsignmentItems(consignmentId: string) {
       returnedQty: schema.consignmentItems.returnedQty,
       soldQty: schema.consignmentItems.soldQty,
       productName: schema.products.name,
+      createdAt: schema.consignmentItems.createdAt,
+      receivedConfirmedAt: schema.consignmentItems.receivedConfirmedAt,
+      confirmedByName: confirmedBy.fullName,
     })
     .from(schema.consignmentItems)
     .innerJoin(schema.products, eq(schema.consignmentItems.productId, schema.products.id))
+    .leftJoin(confirmedBy, eq(schema.consignmentItems.receivedConfirmedById, confirmedBy.id))
     .where(eq(schema.consignmentItems.consignmentId, consignmentId));
   return rows;
+}
+
+// تأكيد استلام صنف معين من العهدة - "إيصال" إلكتروني بسيط بيسجل مين أكد وإمتى، بدل ما الاعتماد
+// يبقى بس على كلام اللي سجّل العهدة في السيستم من غير أي دليل من الموظف نفسه إنه فعلًا استلم
+export async function confirmConsignmentReceipt(consignmentItemId: string) {
+  try {
+    await requirePermission("consignments.manage");
+    const session = await requireSession();
+    const [item] = await db.select().from(schema.consignmentItems).where(eq(schema.consignmentItems.id, consignmentItemId));
+    if (!item) throw new Error("صنف العهدة غير موجود");
+    if (item.receivedConfirmedAt) throw new Error("الاستلام مؤكد بالفعل");
+    await db
+      .update(schema.consignmentItems)
+      .set({ receivedConfirmedAt: new Date(), receivedConfirmedById: session.userId })
+      .where(eq(schema.consignmentItems.id, consignmentItemId));
+    await logAudit({ action: "CONFIRM_RECEIPT", entityType: "ConsignmentItem", entityId: consignmentItemId });
+    revalidatePath("/consignments");
+  } catch (e) {
+    return toActionError(e, "تعذر تأكيد الاستلام");
+  }
 }
 
 // -------------------- بيع من عهدة الموظف: تسجيل بيع فعلي لعميل حقيقي من البضاعة اللي معاه --------------------
@@ -254,6 +305,133 @@ async function sellFromConsignmentInner(input: Parameters<typeof sellFromConsign
   });
 
   await logAudit({ action: "SELL_FROM_CONSIGNMENT", entityType: "SalesInvoice", entityId: result.id, after: input });
+  revalidatePath("/consignments");
+  revalidatePath("/products");
+  revalidatePath("/cash");
+  revalidatePath("/sales");
+  revalidatePath("/");
+  return result;
+}
+
+// تسوية مختلطة لصنف واحد في خطوة واحدة: جزء يترجع للمخزون + جزء يتباع لعميل حقيقي في نفس الوقت -
+// قبل كده كان لازم تعمل عمليتين منفصلتين (إرجاع، وبعدين بيع لعميل) حتى لو كنت عايز توزّع نفس
+// الكمية المتبقية من نفس الصنف في نفس اللحظة. دلوقتي العمليتين بيحصلوا مع بعض جوه transaction واحدة.
+export async function settleConsignmentItemMixed(input: {
+  consignmentItemId: string;
+  locationId: string;
+  returnQuantity?: number;
+  sale?: {
+    quantity: number;
+    unitPrice: number;
+    paymentMethodId: string;
+    customerId?: string;
+    customerName?: string;
+    customerPhone?: string;
+  };
+}) {
+  try {
+    return await settleConsignmentItemMixedInner(input);
+  } catch (e) {
+    return toActionError(e, "تعذر تنفيذ العملية");
+  }
+}
+
+async function settleConsignmentItemMixedInner(input: Parameters<typeof settleConsignmentItemMixed>[0]) {
+  await requirePermission("consignments.manage");
+  const session = await requireSession();
+  const returnQuantity = input.returnQuantity && input.returnQuantity > 0 ? input.returnQuantity : 0;
+  const sale = input.sale && input.sale.quantity > 0 ? input.sale : undefined;
+  if (returnQuantity === 0 && !sale) throw new Error("لازم تحدد كمية إرجاع أو كمية بيع على الأقل");
+  if (!input.locationId) throw new Error("لازم تحدد المكان");
+  if (sale) {
+    if (!Number.isFinite(sale.unitPrice) || sale.unitPrice < 0) throw new Error("سعر البيع لازم يكون رقم صحيح (مش سالب)");
+    if (!sale.paymentMethodId) throw new Error("لازم تحدد طريقة التحصيل للبيع");
+  }
+
+  const result = await db.transaction(async (tx) => {
+    const [item] = await tx.select().from(schema.consignmentItems).where(eq(schema.consignmentItems.id, input.consignmentItemId)).for("update");
+    if (!item) throw new Error("صنف العهدة غير موجود");
+    const remaining = item.quantity - item.returnedQty - item.soldQty;
+    const totalRequested = returnQuantity + (sale?.quantity || 0);
+    if (totalRequested > remaining) {
+      const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, item.productId));
+      throw new Error(
+        `المتبقي فعليًا مع الموظف من "${product?.name || "المنتج"}" هو ${remaining} بس - مينفعش توزّع ${totalRequested} (${returnQuantity} رجوع + ${sale?.quantity || 0} بيع)`
+      );
+    }
+    const [consignment] = await tx.select().from(schema.consignments).where(eq(schema.consignments.id, item.consignmentId)).for("update");
+    if (!consignment) throw new Error("عهدة غير موجودة");
+    const [product] = await tx.select().from(schema.products).where(eq(schema.products.id, item.productId));
+
+    let invoiceId: string | undefined;
+    let invoiceCode: string | undefined;
+
+    if (returnQuantity > 0) {
+      await tx.update(schema.consignmentItems).set({ returnedQty: item.returnedQty + returnQuantity }).where(eq(schema.consignmentItems.id, item.id));
+      await adjustStock(tx, item.productId, input.locationId, returnQuantity);
+      await updateConsignmentBalance(tx, consignment.id, -(returnQuantity * Number(item.unitPrice)));
+    }
+
+    if (sale) {
+      let customerId = sale.customerId;
+      if (!customerId && (sale.customerName?.trim() || sale.customerPhone?.trim())) {
+        const phone = sale.customerPhone?.trim() ? normalizePhone(sale.customerPhone.trim()) : undefined;
+        if (phone) {
+          const [existing] = await tx.select().from(schema.customers).where(eq(schema.customers.phone, phone)).for("update");
+          if (existing) customerId = existing.id;
+          else {
+            const [created] = await tx.insert(schema.customers).values({ name: sale.customerName?.trim() || "عميل بدون اسم", phone, type: "RETAIL" }).returning();
+            customerId = created.id;
+          }
+        } else if (sale.customerName?.trim()) {
+          const [created] = await tx.insert(schema.customers).values({ name: sale.customerName.trim(), type: "RETAIL" }).returning();
+          customerId = created.id;
+        }
+      }
+
+      const total = sale.quantity * sale.unitPrice;
+      const code = genCode("INV");
+      const [invoice] = await tx
+        .insert(schema.salesInvoices)
+        .values({
+          code,
+          customerId,
+          locationId: input.locationId,
+          subtotal: total.toFixed(2),
+          discount: "0.00",
+          total: total.toFixed(2),
+          paidAmount: total.toFixed(2),
+          paymentStatus: "PAID",
+          paymentMethodId: sale.paymentMethodId,
+          source: "OTHER",
+          notes: `بيع من عهدة الموظف`,
+          createdById: session.userId,
+          soldById: consignment.holderId,
+        })
+        .returning();
+      invoiceId = invoice.id;
+      invoiceCode = code;
+      await tx.insert(schema.salesInvoiceItems).values({
+        invoiceId: invoice.id,
+        productId: item.productId,
+        quantity: sale.quantity,
+        unitPrice: sale.unitPrice.toFixed(2),
+        unitCost: product?.avgCost || "0",
+      });
+      await tx.update(schema.consignmentItems).set({ soldQty: item.soldQty + sale.quantity }).where(eq(schema.consignmentItems.id, item.id));
+      await updateConsignmentBalance(tx, consignment.id, -(sale.quantity * Number(item.unitPrice)));
+      await postCashByPaymentMethod(tx, sale.paymentMethodId, "COLLECTION_IN", total, {
+        note: `بيع من عهدة الموظف - فاتورة ${code}`,
+        refType: "Consignment",
+        refId: consignment.id,
+        createdById: session.userId,
+      });
+    }
+
+    return { consignmentId: consignment.id, invoiceId, invoiceCode, returnQuantity, saleQuantity: sale?.quantity || 0 };
+  });
+
+  await logAudit({ action: "PARTIAL_SETTLE", entityType: "Consignment", entityId: result.consignmentId, after: result });
   revalidatePath("/consignments");
   revalidatePath("/products");
   revalidatePath("/cash");
