@@ -1,6 +1,5 @@
 import { listOrders, listCouriers, listShippingCompanies, getOrderStats } from "@/actions/orders";
-import { listProductsWithStock, listLocations } from "@/actions/products";
-import { listCustomers } from "@/actions/customers";
+import { listLocations } from "@/actions/products";
 import { listPaymentMethods } from "@/actions/cash";
 import { can } from "@/lib/auth";
 import { dateAr, money } from "@/lib/format";
@@ -12,13 +11,11 @@ import AssignLocationForm from "./AssignLocationForm";
 import OrderSearchBox from "./OrderSearchBox";
 import Link from "next/link";
 
-// رفعنا المهلة القصوى لتنفيذ الصفحة دي على السيرفر (Vercel) - كانت الصفحة أحيانًا بتاخد وقت طويل
-// (كل الاستعلامات التقيلة اللي بتحصل مرة واحدة: منتجات ومخزون كامل، عملاء، إحصائيات...) وتصطدم
-// بالمهلة الافتراضية (10 ثانية) فتظهر "network error" - ده أمان إضافي فوق تحسين الاستعلامات نفسها.
-// رفعناها لـ 60 (كانت 30) بعد ما ظهر إيرور "504 GATEWAY_TIMEOUT / FUNCTION_INVOCATION_TIMEOUT" -
-// يعني الصفحة كانت فعلًا شغالة وهتخلص، بس ضربت الـ 30 ثانية اللي كنا حاطينها وانقفلت بالقوة قبل
-// ما تخلص. الرقم 60 لسه أقل بكتير من حد Vercel الأقصى (300 ثانية على خطة Hobby)، فمعندناش خسارة
-// لو محتاجينه أعلى من كده بعدين.
+// رفعنا المهلة القصوى لتنفيذ الصفحة دي على السيرفر (Vercel) كأمان إضافي، لكن السبب الجذري للبطء
+// كان حاجة تانية: كل مرة أي حد يغيّر حالة أي أوردر، الصفحة كلها كانت بتتحدث (router.refresh) وكانت
+// بتجيب معاها **كل** المنتجات مع المخزون و**كل** العملاء من قاعدة البيانات - حتى لو "فورم الأوردر
+// الجديد" (اللي هو الوحيد المحتاج البيانات دي) مقفول أصلًا وملموسش. البيانات دي دلوقتي بقت بتتجاب
+// بس لما حد يدوس فعليًا على "+ أوردر جديد" (شوف OrderForm.tsx) - مش مع كل تحديث للصفحة.
 export const maxDuration = 60;
 
 const STAT_ORDER: { key: string; statKey: string }[] = [
@@ -38,10 +35,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const pageNum = Math.max(1, parseInt(rawPage || "1") || 1);
   const [canShip, canConfirmPerm] = await Promise.all([can("orders.ship"), can("orders.confirm")]);
   const canConfirm = canShip || canConfirmPerm;
-  const [{ rows: orders, hasMore }, products, customers, couriers, shippingCompanies, locations, stats, paymentMethods] = await Promise.all([
+  const [{ rows: orders, hasMore }, couriers, shippingCompanies, locations, stats, paymentMethods] = await Promise.all([
     listOrders(status, q, pageNum),
-    listProductsWithStock(),
-    listCustomers(),
     canShip ? listCouriers() : Promise.resolve([]),
     canShip ? listShippingCompanies() : Promise.resolve([]),
     listLocations(),
@@ -72,7 +67,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         <StatCard label="تحصيل معلّق" value={stats.pendingCollection} highlight />
       </div>
 
-      <OrderForm products={products} customers={customers} locations={locations} />
+      <OrderForm locations={locations} />
 
       <OrderSearchBox initialQuery={q || ""} status={status} />
 
