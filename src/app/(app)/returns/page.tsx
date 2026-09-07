@@ -34,7 +34,7 @@ export default async function ReturnsPage() {
                 <td>{r.imageUrl && <a href={r.imageUrl} target="_blank" className="text-primary text-xs underline">عرض</a>}</td>
                 <td>{statusBadge(r.status)}</td>
                 <td>{dateAr(r.createdAt)}</td>
-                <td>{r.status === "PENDING" && <ApproveControls id={r.id} locations={locations} paymentMethods={paymentMethods} />}</td>
+                <td>{r.status === "PENDING" && <ApproveControls id={r.id} locations={locations} paymentMethods={paymentMethods} totalAmount={r.totalAmount} kind={r.kind} />}</td>
               </tr>
             ))}
           </tbody>

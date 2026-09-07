@@ -25,10 +25,14 @@ export async function getFinancialPosition() {
   // بسعر البيع (consignments.balance، اللي متبني على unitPrice وقت التسليم) وده بيضخّم صافي الوضع المالي
   // عن الحقيقي، لأن قيمة البضاعة الفعلية اللي معاك (لسه ماتباعتش) هي تكلفتها مش سعر بيعها المتوقع.
   const consignmentItemRows = await db
-    .select({ quantity: schema.consignmentItems.quantity, returnedQty: schema.consignmentItems.returnedQty, avgCost: schema.products.avgCost })
+    .select({ quantity: schema.consignmentItems.quantity, returnedQty: schema.consignmentItems.returnedQty, soldQty: schema.consignmentItems.soldQty, avgCost: schema.products.avgCost })
     .from(schema.consignmentItems)
     .innerJoin(schema.products, eq(schema.consignmentItems.productId, schema.products.id));
-  const consignmentCostValue = consignmentItemRows.reduce((s, r) => s + Math.max(r.quantity - r.returnedQty, 0) * Number(r.avgCost), 0);
+  // المتبقي فعليًا مع الموظف (بضاعة لسه معاه، لا رجعت ولا اتباعت) = الكمية - المرتجع - المباع. قبل
+  // كده الحساب كان بيطرح returnedQty بس وبينسى soldQty، فكان بيحسب البضاعة اللي اتباعت فعليًا لعميل
+  // (بقت فلوس/مديونية عند العميل، مش بضاعة قاعدة مع الموظف) كأنها لسه "قيمة عهدة" قايمة - تضخيم
+  // مزدوج لصافي الوضع المالي (مرة كبضاعة عهدة، ومرة كمان لو دخلت في رصيد العميل من بيع العهدة).
+  const consignmentCostValue = consignmentItemRows.reduce((s, r) => s + Math.max(r.quantity - r.returnedQty - r.soldQty, 0) * Number(r.avgCost), 0);
 
   // قيمة المخزون بالتكلفة (محل + مخزن)
   const stockRows = await db

@@ -6,6 +6,55 @@ import { adjustStock, updateCustomerBalance, updateSupplierBalance, postCashByPa
 import { toActionError } from "@/lib/actionError";
 import { revalidatePath } from "next/cache";
 
+// -------------------- بيانات الفاتورة الأصلية لبناء مرتجع بيع مرتبط بيها --------------------
+// كانت شاشة "تسجيل مرتجع" بتخلي المستخدم يختار أي منتج وكمية بحرية تامة من غير أي ربط بفاتورة -
+// فمكانش فيه أي حد أقصى فعلي لكمية أي مرتجع (الحماية اللي في createReturnRequestInner ضد الإرجاع
+// المتكرر لنفس البند كانت موجودة بالكود لكن معطّلة عمليًا لأنها بتتفعّل بس لو invoiceItemId موجود،
+// وده مكانش بيتبعت من الشاشة أصلًا). الدالتين دول بيوفروا للشاشة قائمة فواتير العميل، وبعد اختيار
+// الفاتورة، بنودها مع "الكمية المتاحة للإرجاع فعليًا" بعد خصم أي مرتجع سابق (معلّق أو معتمد) لنفس البند.
+export async function listCustomerInvoicesForReturn(customerId: string) {
+  await requirePermission("returns.create");
+  return db
+    .select({
+      id: schema.salesInvoices.id,
+      code: schema.salesInvoices.code,
+      total: schema.salesInvoices.total,
+      paidAmount: schema.salesInvoices.paidAmount,
+      paymentStatus: schema.salesInvoices.paymentStatus,
+      createdAt: schema.salesInvoices.createdAt,
+    })
+    .from(schema.salesInvoices)
+    .where(eq(schema.salesInvoices.customerId, customerId))
+    .orderBy(desc(schema.salesInvoices.createdAt))
+    .limit(100);
+}
+
+export async function getInvoiceItemsForReturn(invoiceId: string) {
+  await requirePermission("returns.create");
+  const items = await db
+    .select({
+      id: schema.salesInvoiceItems.id,
+      productId: schema.salesInvoiceItems.productId,
+      productName: schema.products.name,
+      quantity: schema.salesInvoiceItems.quantity,
+      unitPrice: schema.salesInvoiceItems.unitPrice,
+    })
+    .from(schema.salesInvoiceItems)
+    .innerJoin(schema.products, eq(schema.salesInvoiceItems.productId, schema.products.id))
+    .where(eq(schema.salesInvoiceItems.invoiceId, invoiceId));
+  const itemIds = items.map((i) => i.id);
+  const priorRows = itemIds.length
+    ? await db
+        .select({ invoiceItemId: schema.returnItems.invoiceItemId, quantity: schema.returnItems.quantity })
+        .from(schema.returnItems)
+        .innerJoin(schema.returnRequests, eq(schema.returnItems.returnRequestId, schema.returnRequests.id))
+        .where(and(inArray(schema.returnItems.invoiceItemId, itemIds), ne(schema.returnRequests.status, "REJECTED")))
+    : [];
+  const priorMap: Record<string, number> = {};
+  for (const r of priorRows) if (r.invoiceItemId) priorMap[r.invoiceItemId] = (priorMap[r.invoiceItemId] || 0) + r.quantity;
+  return items.map((i) => ({ ...i, alreadyReturned: priorMap[i.id] || 0, returnableQty: i.quantity - (priorMap[i.id] || 0) }));
+}
+
 export async function createReturnRequest(input: {
   kind: "SALE_RETURN" | "PURCHASE_RETURN";
   invoiceId?: string;
@@ -27,6 +76,16 @@ async function createReturnRequestInner(input: Parameters<typeof createReturnReq
   await requirePermission("returns.create");
   const session = await requireSession();
   if (!input.items || input.items.length === 0) throw new Error("لازم تضيف صنف واحد على الأقل في المرتجع");
+  // مرتجع البيع لازم يكون مرتبط بالفاتورة الأصلية وببند الفاتورة بالظبط لكل صنف - قبل كده كان
+  // ممكن تسجّل مرتجع بيع بأي منتج/كمية بحرية من غير أي ربط بفاتورة حقيقية، وده كان بيعطّل فعليًا
+  // حماية "منع تكرار الإرجاع لنفس البند بكمية أكبر من الأصلية" اللي تحت (كانت موجودة بالكود لكن
+  // بتتفعّل بس لو invoiceItemId موجود، وده مكانش بيتبعت من الشاشة أصلًا خالص).
+  if (input.kind === "SALE_RETURN") {
+    if (!input.invoiceId) throw new Error("لازم تختار الفاتورة الأصلية للمرتجع");
+    for (const item of input.items) {
+      if (!item.invoiceItemId) throw new Error("لازم تختار البند الأصلي من الفاتورة لكل صنف في المرتجع");
+    }
+  }
   const totalAmount = input.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
   const code = genCode("RET");
 
@@ -106,15 +165,22 @@ export async function getReturnDetail(id: string) {
 }
 
 // المكان الافتراضي اللي ترجعله البضاعة (أول محل نشط) - ممكن تتحسن لاحقًا لاختيار المكان وقت الطلب
-export async function approveReturn(id: string, locationId: string, refundPaymentMethodId?: string) {
+//
+// cashRefundAmount: قد إيه من قيمة المرتجع (ret.totalAmount) هيترد "نقدي دلوقتي" من الخزينة، والباقي
+// (totalAmount - cashRefundAmount) بيتخصم من رصيد العميل/المورد بدل ما يترد كاش. قبل كده الاعتماد
+// كان بيعمل الاتنين مع بعض دايمًا وبكامل قيمة المرتجع (يخصم رصيد العميل بالكامل + يطلع فلوس كاش
+// بالكامل من الخزينة كمان) - يعني كل مرتجع بيع بيتّرد فلوسه "مرتين" فعليًا. لو الباراميتر ده متبعتش،
+// بيتعامل معاه كـ 0 (يعني الافتراضي الآمن: خصم من الرصيد بس، من غير أي حركة كاش) بدل ما يفترض
+// استرداد كامل بالغلط.
+export async function approveReturn(id: string, locationId: string, refundPaymentMethodId?: string, cashRefundAmount?: number) {
   try {
-    return await approveReturnInner(id, locationId, refundPaymentMethodId);
+    return await approveReturnInner(id, locationId, refundPaymentMethodId, cashRefundAmount);
   } catch (e) {
     return toActionError(e, "تعذر اعتماد المرتجع");
   }
 }
 
-async function approveReturnInner(id: string, locationId: string, refundPaymentMethodId?: string) {
+async function approveReturnInner(id: string, locationId: string, refundPaymentMethodId?: string, cashRefundAmount?: number) {
   await requirePermission("returns.approve");
   const session = await requireSession();
 
@@ -158,10 +224,21 @@ async function approveReturnInner(id: string, locationId: string, refundPaymentM
         }
       }
     }
+    // قيمة المرتجع بتتقسم لجزئين ميتقابلوش مع بعض أبدًا: جزء بيترد كاش من الخزينة، والباقي بيتخصم من
+    // رصيد العميل/المورد - عشان قيمة المرتجع متتّرد مرتين (مرة كاش ومرة كخصم رصيد) زي ما كان بيحصل.
+    const totalAmount = Number(ret.totalAmount);
+    const cashPortion = Math.min(Math.max(Number(cashRefundAmount) || 0, 0), totalAmount);
+    const balancePortion = totalAmount - cashPortion;
+    if (cashPortion > 0 && !refundPaymentMethodId) {
+      throw new Error("لازم تختار طريقة الدفع اللي هيترد بيها الجزء النقدي من المرتجع");
+    }
+
     if (ret.kind === "SALE_RETURN" && ret.customerId) {
-      await updateCustomerBalance(tx, ret.customerId, -Number(ret.totalAmount));
-      if (refundPaymentMethodId) {
-        await postCashByPaymentMethod(tx, refundPaymentMethodId, "RETURN_OUT", Number(ret.totalAmount), {
+      if (balancePortion > 0) {
+        await updateCustomerBalance(tx, ret.customerId, -balancePortion);
+      }
+      if (cashPortion > 0 && refundPaymentMethodId) {
+        await postCashByPaymentMethod(tx, refundPaymentMethodId, "RETURN_OUT", cashPortion, {
           note: `استرداد مرتجع ${ret.code}`,
           refType: "ReturnRequest",
           refId: ret.id,
@@ -170,11 +247,13 @@ async function approveReturnInner(id: string, locationId: string, refundPaymentM
       }
     }
     if (ret.kind === "PURCHASE_RETURN" && ret.supplierId) {
-      // بيقل اللي علينا للمورد بمقدار قيمة المرتجع
-      await updateSupplierBalance(tx, ret.supplierId, -Number(ret.totalAmount));
-      if (refundPaymentMethodId) {
+      // بيقل اللي علينا للمورد بمقدار الجزء اللي مخصوم من رصيده
+      if (balancePortion > 0) {
+        await updateSupplierBalance(tx, ret.supplierId, -balancePortion);
+      }
+      if (cashPortion > 0 && refundPaymentMethodId) {
         // لو المورد رجعلنا فلوس كاش بدل ما يخصم من رصيده
-        await postCashByPaymentMethod(tx, refundPaymentMethodId, "RETURN_IN", Number(ret.totalAmount), {
+        await postCashByPaymentMethod(tx, refundPaymentMethodId, "RETURN_IN", cashPortion, {
           note: `استرداد نقدي من مورد - مرتجع ${ret.code}`,
           refType: "ReturnRequest",
           refId: ret.id,
