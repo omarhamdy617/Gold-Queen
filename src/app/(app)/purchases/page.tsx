@@ -35,7 +35,7 @@ export default async function PurchasesPage() {
             {purchases.map((p) => (
               <tr key={p.id} className="border-b last:border-0 hover:bg-neutral-50">
                 <td className="p-3 font-mono text-xs">
-                  <Link href={`/purchases/${p.id}`} className="text-primary underline">{p.code}</Link>
+                  <Link href={`/purchases/${p.id}`} prefetch={false} className="text-primary underline">{p.code}</Link>
                 </td>
                 <td>{p.supplierName}</td>
                 <td>{p.locationName}</td>
