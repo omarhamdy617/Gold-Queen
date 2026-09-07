@@ -1,6 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { createPurchase, createSupplier } from "@/actions/purchases";
+import { listProductsWithStock } from "@/actions/products";
 import { useRouter } from "next/navigation";
 import ProductSearchSelect from "@/components/ProductSearchSelect";
 import { friendlyErrorMessage } from "@/lib/errors";
@@ -8,7 +9,7 @@ import { isActionError } from "@/lib/actionError";
 
 type Line = { productId: string; quantity: string; unitCost: string; serials: string };
 
-export default function PurchaseForm({ suppliers, products, locations, paymentMethods }: any) {
+export default function PurchaseForm({ suppliers, locations, paymentMethods }: any) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -21,13 +22,47 @@ export default function PurchaseForm({ suppliers, products, locations, paymentMe
   const [newSupplierName, setNewSupplierName] = useState("");
   const [error, setError] = useState("");
 
+  const [loadingData, setLoadingData] = useState(false);
+  const [dataError, setDataError] = useState("");
+  const [products, setProducts] = useState<any[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  async function openForm() {
+    setOpen(true);
+    if (loaded) return;
+    setLoadingData(true);
+    setDataError("");
+    try {
+      const prods = await listProductsWithStock();
+      setProducts(prods as any[]);
+      setLoaded(true);
+    } catch (e: any) {
+      setDataError(friendlyErrorMessage(e, "تعذر تحميل بيانات المنتجات"));
+    } finally {
+      setLoadingData(false);
+    }
+  }
+
   const total = lines.reduce((s, l) => s + (parseFloat(l.quantity) || 0) * (parseFloat(l.unitCost) || 0), 0);
 
   if (!open)
     return (
-      <button onClick={() => setOpen(true)} className="bg-gold text-white rounded-lg px-4 py-2 text-sm">
+      <button onClick={openForm} className="bg-gold text-white rounded-lg px-4 py-2 text-sm">
         + تسجيل شراء جديد
       </button>
+    );
+
+  if (loadingData) return <div className="app-card p-4 text-sm text-muted">جارٍ تحميل بيانات المنتجات...</div>;
+
+  if (dataError)
+    return (
+      <div className="app-card p-4 space-y-2">
+        <div className="text-red-600 text-sm bg-red-50 border border-red-200 rounded px-3 py-2">{dataError}</div>
+        <div className="flex gap-2">
+          <button onClick={openForm} className="bg-gold text-white rounded-lg px-4 py-2 text-sm">إعادة المحاولة</button>
+          <button type="button" onClick={() => setOpen(false)} className="text-muted text-sm">إلغاء</button>
+        </div>
+      </div>
     );
 
   function submit() {
