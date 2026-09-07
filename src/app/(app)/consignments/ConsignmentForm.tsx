@@ -1,12 +1,13 @@
 "use client";
 import { useState, useTransition } from "react";
 import { giveConsignment } from "@/actions/consignments";
+import { listProductsWithStock } from "@/actions/products";
 import { useRouter } from "next/navigation";
 import { isActionError } from "@/lib/actionError";
 import { friendlyErrorMessage } from "@/lib/errors";
 import ProductSearchSelect from "@/components/ProductSearchSelect";
 
-export default function ConsignmentForm({ employees, products, locations }: any) {
+export default function ConsignmentForm({ employees, locations }: any) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -15,7 +16,41 @@ export default function ConsignmentForm({ employees, products, locations }: any)
   const [lines, setLines] = useState([{ productId: "", quantity: "", unitPrice: "" }]);
   const [error, setError] = useState("");
 
-  if (!open) return <button onClick={() => setOpen(true)} className="bg-gold text-white rounded-lg px-4 py-2 text-sm">+ تسليم عهدة</button>;
+  const [loadingData, setLoadingData] = useState(false);
+  const [dataError, setDataError] = useState("");
+  const [products, setProducts] = useState<any[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  async function openForm() {
+    setOpen(true);
+    if (loaded) return;
+    setLoadingData(true);
+    setDataError("");
+    try {
+      const prods = await listProductsWithStock();
+      setProducts(prods as any[]);
+      setLoaded(true);
+    } catch (e: any) {
+      setDataError(friendlyErrorMessage(e, "تعذر تحميل بيانات المنتجات"));
+    } finally {
+      setLoadingData(false);
+    }
+  }
+
+  if (!open) return <button onClick={openForm} className="bg-gold text-white rounded-lg px-4 py-2 text-sm">+ تسليم عهدة</button>;
+
+  if (loadingData) return <div className="bg-white rounded-xl shadow p-4 text-sm text-muted">جارٍ تحميل بيانات المنتجات...</div>;
+
+  if (dataError)
+    return (
+      <div className="bg-white rounded-xl shadow p-4 space-y-2">
+        <div className="text-red-600 text-xs">{dataError}</div>
+        <div className="flex gap-2">
+          <button onClick={openForm} className="bg-gold text-white rounded-lg px-4 py-2 text-sm">إعادة المحاولة</button>
+          <button type="button" onClick={() => setOpen(false)} className="text-neutral-500 text-sm">إلغاء</button>
+        </div>
+      </div>
+    );
 
   return (
     <div className="bg-white rounded-xl shadow p-4 space-y-3">
