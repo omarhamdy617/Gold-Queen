@@ -25,7 +25,7 @@ export default async function TransfersPage() {
             {transfers.map((t) => (
               <tr key={t.id} className="border-b last:border-0 hover:bg-neutral-50">
                 <td className="p-3 font-mono text-xs">
-                  <Link href={`/transfers/${t.id}`} className="text-primary underline">{t.code}</Link>
+                  <Link href={`/transfers/${t.id}`} prefetch={false} className="text-primary underline">{t.code}</Link>
                 </td>
                 <td>{t.fromName}</td>
                 <td>{t.toName}</td>
