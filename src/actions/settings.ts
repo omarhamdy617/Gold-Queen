@@ -3,7 +3,7 @@ import { db, schema } from "@/db";
 import { eq, and } from "drizzle-orm";
 import { requirePermission, requireSession, requireAdminRole, hashPassword, logAudit } from "@/lib/auth";
 import { DEFAULT_ROLE_PERMISSIONS } from "@/lib/permissions";
-import { toActionError } from "@/lib/actionError";
+import { toActionError, pgConstraintCode } from "@/lib/actionError";
 import { revalidatePath } from "next/cache";
 
 const MIN_PASSWORD_LENGTH = 6;
@@ -129,7 +129,10 @@ async function updateUserInner(userId: string, data: Parameters<typeof updateUse
     revalidatePath("/settings/users");
     return u;
   } catch (e: any) {
-    if (String(e?.message || "").includes("unique")) throw new Error("اسم المستخدم ده مستخدم بالفعل");
+    // كانت بتدوّر على "unique" في e.message مباشرة - مش بتلاقيها لأن Drizzle بيغلّف رسالة الخطأ
+    // الحقيقية جوه e.cause ويسيب e.message بس "Failed query: ..." (نص الاستعلام SQL الخام) - وده
+    // كان بيسيب المستخدم يشوف رسالة تقنية مخيفة بدل "اسم المستخدم ده مستخدم بالفعل" الواضحة.
+    if (pgConstraintCode(e) === "23505") throw new Error("اسم المستخدم ده مستخدم بالفعل");
     throw e;
   }
 }
@@ -178,8 +181,12 @@ export async function deleteUser(userId: string) {
     try {
       await db.delete(schema.users).where(eq(schema.users.id, userId));
     } catch (e: any) {
-      // المستخدم ده مرتبط بسجلات فعلية (فواتير/عمليات سابقة سجلها) - المفروض توقفه (خانة "نشط") بدل ما تمسحه خالص
-      if (String(e?.message || "").toLowerCase().includes("foreign key") || String(e?.code) === "23503") {
+      // المستخدم ده مرتبط بسجلات فعلية (فواتير/عمليات سابقة سجلها) - المفروض توقفه (خانة "نشط") بدل ما تمسحه خالص.
+      // كان الفحص ده بيدوّر على "foreign key" في e.message أو e.code مباشرة - مش بيلاقيهم لأن
+      // Drizzle بيغلّف الخطأ الحقيقي جوه e.cause ويسيب e.message بس "Failed query: ..." (نص
+      // الاستعلام SQL كامل بما فيه الـ ID)، وده كان بيسيب المستخدم يشوف الرسالة التقنية الخام دي
+      // بدل الرسالة العربية الواضحة اللي هنا - استخدمنا pgConstraintCode اللي بيدوّر في e.cause كمان.
+      if (pgConstraintCode(e) === "23503") {
         throw new Error(`متقدرش تمسح "${user.fullName}" لأنه مسجل عمليات فعلية قبل كده (فواتير/مشتريات/إلخ) مرتبطة بيه - استخدم زرار "إيقاف" بدل الحذف عشان تمنعه يدخل من غير ما تفقد سجل العمليات القديمة.`);
       }
       throw e;

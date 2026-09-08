@@ -4,7 +4,7 @@ import { eq, and, gte, lte, like, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { requirePermission, requireSession, logAudit, genCode } from "@/lib/auth";
 import { adjustStock, updateConsignmentBalance, postCashByPaymentMethod, stockShortageMessage, checkConsignmentLimit } from "@/lib/ops";
-import { toActionError } from "@/lib/actionError";
+import { toActionError, pgConstraintCode } from "@/lib/actionError";
 import { normalizePhone } from "@/lib/phone";
 import { revalidatePath } from "next/cache";
 
@@ -122,8 +122,10 @@ async function giveConsignmentInner(input: Parameters<typeof giveConsignment>[0]
         [consignment] = await tx.insert(schema.consignments).values({ holderId: input.holderId }).returning();
       } catch (e: any) {
         // نادر جدًا: عهدتين اتسجلوا لنفس الموظف في نفس اللحظة بالظبط - قيد الـ unique على holderId
-        // (schema.ts) بيرفض الإدخال التاني، فبنقرا الصف اللي اتعمل فعليًا بدل ما نفشل العملية كلها
-        if (String(e?.message || "").toLowerCase().includes("unique") || e?.code === "23505") {
+        // (schema.ts) بيرفض الإدخال التاني، فبنقرا الصف اللي اتعمل فعليًا بدل ما نفشل العملية كلها.
+        // كان الفحص بيدوّر على e.message/e.code مباشرة - مش بيلاقيهم لأن Drizzle بيغلّف الخطأ
+        // الحقيقي جوه e.cause (استخدمنا pgConstraintCode اللي بيدوّر هناك كمان).
+        if (pgConstraintCode(e) === "23505") {
           [consignment] = await tx.select().from(schema.consignments).where(eq(schema.consignments.holderId, input.holderId)).for("update");
           if (!consignment) throw e;
         } else {
