@@ -3,9 +3,8 @@ import { listLocations } from "@/actions/products";
 import { listPaymentMethods } from "@/actions/cash";
 import { money, num } from "@/lib/format";
 import ConsignmentForm from "./ConsignmentForm";
-import ConsignmentDetail from "./ConsignmentDetail";
+import ConsignmentPanels from "./ConsignmentPanels";
 import ConsignmentLimitForm from "./ConsignmentLimitForm";
-import ConsignmentActivity from "./ConsignmentActivity";
 
 const STALE_DAYS = 21;
 
@@ -64,15 +63,9 @@ export default async function ConsignmentsPage() {
               {/* شلنا زرار "التسوية" (مبلغ نقدي منفصل بيقلل المديونية من غير ما يترتبط ببضاعة
                   فعلية) - كان بيسبب تعارض بين الرصيد المالي وجدول الأصناف (المديونية تقل والبضاعة
                   تفضل شكلها "لسه معاه"). دلوقتي الطريقة الوحيدة لتقليل مديونية الموظف هي فعليًا
-                  تسجيل بيع (فاتورة حقيقية) أو رجوع بضاعة - عن طريق "تفاصيل البضاعة" تحت، فالرصيد
+                  تسجيل بيع (فاتورة حقيقية) أو رجوع بضاعة - عن طريق تاب "البضاعة" تحت، فالرصيد
                   المالي وجدول الأصناف بيفضلوا متطابقين دايمًا. */}
-
-              {/* الأصناف/رجوع/بيع من ناحية، ونشاط ومبيعات الفترة المحددة من ناحية تانية - كل واحدة
-                  فيهم منفصلة وبتتفتح لوحدها عشان الكارت يفضل مضغوط لحد ما تحتاجها فعليًا */}
-              <div className="flex items-center gap-4 border-t pt-2 flex-wrap">
-                <ConsignmentDetail consignmentId={c.id} locations={locations} paymentMethods={paymentMethods} />
-                <ConsignmentActivity holderId={c.holderId} />
-              </div>
+              <ConsignmentPanels consignmentId={c.id} holderId={c.holderId} locations={locations} paymentMethods={paymentMethods} />
             </div>
           );
         })}
