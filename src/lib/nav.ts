@@ -18,6 +18,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/loans", label: "السلف", perm: "loans.manage", icon: "🤝" },
   { href: "/expenses", label: "المصروفات", perm: "expenses.manage", icon: "💸" },
   { href: "/finance", label: "الوضع المالي", perm: "finance.view", icon: "📈" },
+  { href: "/profit", label: "الأرباح والأداء", perm: "reports.view", icon: "💹" },
   { href: "/reports", label: "الأكثر مبيعًا", perm: "reports.view", icon: "🏆" },
   { href: "/audit", label: "سجل التدقيق", perm: "audit.view", icon: "🔒" },
   { href: "/settings/users", label: "المستخدمون والصلاحيات", perm: "users.manage", icon: "🧑‍💼" },
