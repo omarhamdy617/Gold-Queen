@@ -119,7 +119,14 @@ function monthLabelAr(d: Date) {
 
 // أداء آخر N شهر (افتراضيًا 12) - كل شهر بيتحسب بنفس حدود "بداية الشهر" المستخدمة في لوحة
 // التحكم (بتوقيت القاهرة، نفس دالة cairoStartOfMonth) عشان أي شهر يتقارن صح مع الرقم اللي
-// كان ظاهر ليه وقتها في الداشبورد - الشهر الحالي (index 0) بيوقف عند "دلوقتي" مش آخر يوم فيه
+// كان ظاهر ليه وقتها في الداشبورد - الشهر الحالي (index 0) بيوقف عند "دلوقتي" مش آخر يوم فيه.
+//
+// ملحوظة مهمة (سبب توقف الموقع كله في 8 سبتمبر): النسخة الأولى من الدالة دي كانت بتعمل استعلام
+// منفصل لكل شهر (4 استعلامات × 12 شهر = 48 اتصال بقاعدة البيانات في نفس اللحظة كل ما حد يفتح
+// الصفحة) - ده خنق قاعدة البيانات (Supabase) وسبب توقف كل صفحة تانية في الموقع، مش بس صفحة
+// الأرباح، لأن كل صفحة محتاجة اتصال بنفس قاعدة البيانات. الحل: بنجيب صفوف الفترة كاملة (آخر 12
+// شهر) في 4 استعلامات ثابتة بس (بغض النظر عن عدد الشهور)، وبعدين بنوزّعها على الشهور في الكود
+// نفسه (JS) - نفس النتيجة بالظبط، حمل أخف بكتير وثابت على قاعدة البيانات.
 export async function getMonthlyPerformance(monthsBack = 12) {
   await requirePermission("reports.view");
 
@@ -131,7 +138,84 @@ export async function getMonthlyPerformance(monthsBack = 12) {
     periodEnd = new Date(periodStart.getTime() - 1);
     periodStart = cairoStartOfMonth(periodEnd);
   }
+  const overallStart = ranges[ranges.length - 1].start;
+  const overallEnd = ranges[0].end;
 
-  const results = await Promise.all(ranges.map((r) => getProfitSummary(r.start, r.end)));
-  return ranges.map((r, i) => ({ label: r.label, ...results[i] }));
+  function bucketIndex(d: Date) {
+    for (let i = 0; i < ranges.length; i++) {
+      if (d >= ranges[i].start && d <= ranges[i].end) return i;
+    }
+    return -1;
+  }
+
+  const [salesRows, itemRows, returnRows, expenseRows] = await Promise.all([
+    db
+      .select({ total: schema.salesInvoices.total, createdAt: schema.salesInvoices.createdAt })
+      .from(schema.salesInvoices)
+      .where(and(gte(schema.salesInvoices.createdAt, overallStart), lte(schema.salesInvoices.createdAt, overallEnd))),
+    db
+      .select({
+        createdAt: schema.salesInvoices.createdAt,
+        unitPrice: schema.salesInvoiceItems.unitPrice,
+        unitCost: schema.salesInvoiceItems.unitCost,
+        quantity: schema.salesInvoiceItems.quantity,
+      })
+      .from(schema.salesInvoiceItems)
+      .innerJoin(schema.salesInvoices, eq(schema.salesInvoiceItems.invoiceId, schema.salesInvoices.id))
+      .where(and(gte(schema.salesInvoices.createdAt, overallStart), lte(schema.salesInvoices.createdAt, overallEnd))),
+    db
+      .select({
+        approvedAt: schema.returnRequests.approvedAt,
+        unitPrice: schema.returnItems.unitPrice,
+        quantity: schema.returnItems.quantity,
+        unitCost: sql<string>`coalesce(${schema.salesInvoiceItems.unitCost}, ${schema.products.avgCost}, 0)`,
+      })
+      .from(schema.returnItems)
+      .innerJoin(schema.returnRequests, eq(schema.returnItems.returnRequestId, schema.returnRequests.id))
+      .leftJoin(schema.salesInvoiceItems, eq(schema.returnItems.invoiceItemId, schema.salesInvoiceItems.id))
+      .leftJoin(schema.products, eq(schema.returnItems.productId, schema.products.id))
+      .where(
+        and(
+          eq(schema.returnRequests.kind, "SALE_RETURN"),
+          eq(schema.returnRequests.status, "APPROVED"),
+          gte(schema.returnRequests.approvedAt, overallStart),
+          lte(schema.returnRequests.approvedAt, overallEnd)
+        )
+      ),
+    db
+      .select({ amount: schema.expenses.amount, createdAt: schema.expenses.createdAt })
+      .from(schema.expenses)
+      .where(and(gte(schema.expenses.createdAt, overallStart), lte(schema.expenses.createdAt, overallEnd))),
+  ]);
+
+  const salesTotals = new Array(monthsBack).fill(0);
+  for (const r of salesRows) {
+    const idx = bucketIndex(new Date(r.createdAt));
+    if (idx >= 0) salesTotals[idx] += Number(r.total);
+  }
+
+  const grossProfits = new Array(monthsBack).fill(0);
+  for (const r of itemRows) {
+    const idx = bucketIndex(new Date(r.createdAt));
+    if (idx >= 0) grossProfits[idx] += (Number(r.unitPrice) - Number(r.unitCost)) * r.quantity;
+  }
+  for (const r of returnRows) {
+    if (!r.approvedAt) continue;
+    const idx = bucketIndex(new Date(r.approvedAt));
+    if (idx >= 0) grossProfits[idx] -= (Number(r.unitPrice) - Number(r.unitCost)) * r.quantity;
+  }
+
+  const expensesTotals = new Array(monthsBack).fill(0);
+  for (const r of expenseRows) {
+    const idx = bucketIndex(new Date(r.createdAt));
+    if (idx >= 0) expensesTotals[idx] += Number(r.amount);
+  }
+
+  return ranges.map((r, i) => ({
+    label: r.label,
+    salesTotal: salesTotals[i],
+    grossProfit: grossProfits[i],
+    expensesTotal: expensesTotals[i],
+    netProfit: grossProfits[i] - expensesTotals[i],
+  }));
 }
