@@ -1,6 +1,6 @@
 "use server";
 import { db, schema } from "@/db";
-import { eq } from "drizzle-orm";
+import { eq, and, gte, lte, like, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { requirePermission, requireSession, logAudit, genCode } from "@/lib/auth";
 import { adjustStock, updateConsignmentBalance, postCashByPaymentMethod, stockShortageMessage, checkConsignmentLimit } from "@/lib/ops";
@@ -42,7 +42,34 @@ export async function listConsignments() {
     // كانت من غير حد أقصى للسطور - مش مشكلة دلوقتي بعدد الموظفين الحالي، لكن سقف أمان يمنع
     // الشاشة من التقيل لو عدد العهد كبر كتير مستقبلًا (نفس أسلوب listOrders/listSales بالظبط)
     .limit(500);
-  return rows;
+
+  // قبل كده الشاشة كانت بتوريك "الرصيد المالي" بس لكل موظف، ومش بتوريك "معاه كام قطعة فعليًا"
+  // من غير ما تفتح "تفاصيل" كل عهدة لوحدها - وده كان بيصعّب متابعة كل الموظفين مرة واحدة بنظرة
+  // سريعة. بنحسب هنا إجمالي الكمية والقيمة المتبقية فعليًا (مش راجعة ولا اتباعت) لكل عهدة، عشان
+  // تظهر في كارت الملخص نفسه.
+  const itemRows = await db
+    .select({
+      consignmentId: schema.consignmentItems.consignmentId,
+      quantity: schema.consignmentItems.quantity,
+      returnedQty: schema.consignmentItems.returnedQty,
+      soldQty: schema.consignmentItems.soldQty,
+      unitPrice: schema.consignmentItems.unitPrice,
+    })
+    .from(schema.consignmentItems);
+  const remainingByConsignment = new Map<string, { qty: number; value: number }>();
+  for (const r of itemRows) {
+    const remaining = r.quantity - r.returnedQty - r.soldQty;
+    if (remaining <= 0) continue;
+    const cur = remainingByConsignment.get(r.consignmentId) || { qty: 0, value: 0 };
+    cur.qty += remaining;
+    cur.value += remaining * Number(r.unitPrice);
+    remainingByConsignment.set(r.consignmentId, cur);
+  }
+  return rows.map((r) => ({
+    ...r,
+    remainingQty: remainingByConsignment.get(r.id)?.qty || 0,
+    remainingValue: remainingByConsignment.get(r.id)?.value || 0,
+  }));
 }
 
 // عمر أقدم صنف لسه متبقي (مش راجع ولا اتباع بالكامل) لكل عهدة - عشان نقدر نبني تنبيه/شارة
@@ -494,4 +521,40 @@ async function returnConsignmentItemsInner(input: Parameters<typeof returnConsig
   revalidatePath("/consignments");
   revalidatePath("/products");
   return { totalReturnedValue };
+}
+
+// -------------------- نشاط ومبيعات الموظف من عهدته خلال فترة زمنية محددة --------------------
+// المستخدم كان بيحتاج يعرف "الموظف/المندوب ده باع بكام وعمل كام فاتورة خلال الفترة اللي أنا
+// محددها" من غير ما يدوّر يدويًا في شاشة الفواتير - بنستخدم نفس العلامة (notes) اللي بتتسجل تلقائيًا
+// على أي فاتورة اتعملت من بيع عهدة (sellFromConsignment / settleConsignmentItemMixed) عشان نميزها
+// عن باقي فواتير البيع العادية لنفس الموظف، ونحسبها مجمّعة في الفترة المطلوبة.
+export async function getConsignmentActivity(holderId: string, from: Date, to: Date) {
+  try {
+    await requirePermission("consignments.manage");
+    const rows = await db
+      .select({
+        id: schema.salesInvoices.id,
+        code: schema.salesInvoices.code,
+        total: schema.salesInvoices.total,
+        createdAt: schema.salesInvoices.createdAt,
+        customerName: schema.customers.name,
+      })
+      .from(schema.salesInvoices)
+      .leftJoin(schema.customers, eq(schema.salesInvoices.customerId, schema.customers.id))
+      .where(
+        and(
+          eq(schema.salesInvoices.soldById, holderId),
+          like(schema.salesInvoices.notes, "بيع من عهدة الموظف%"),
+          gte(schema.salesInvoices.createdAt, from),
+          lte(schema.salesInvoices.createdAt, to)
+        )
+      )
+      .orderBy(desc(schema.salesInvoices.createdAt))
+      // سقف أمان يمنع الشاشة من التقيل لو فترة طويلة جدًا فيها مئات الفواتير لنفس الموظف
+      .limit(500);
+    const total = rows.reduce((s, r) => s + Number(r.total), 0);
+    return { count: rows.length, total, invoices: rows };
+  } catch (e) {
+    return toActionError(e, "تعذر تحميل نشاط الموظف");
+  }
 }

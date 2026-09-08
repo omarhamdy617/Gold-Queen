@@ -1,11 +1,12 @@
 import { listConsignments, listEmployees, getOldestPendingItemAge } from "@/actions/consignments";
 import { listLocations } from "@/actions/products";
 import { listPaymentMethods } from "@/actions/cash";
-import { money } from "@/lib/format";
+import { money, num } from "@/lib/format";
 import ConsignmentForm from "./ConsignmentForm";
 import SettleForm from "./SettleForm";
 import ConsignmentDetail from "./ConsignmentDetail";
 import ConsignmentLimitForm from "./ConsignmentLimitForm";
+import ConsignmentActivity from "./ConsignmentActivity";
 
 const STALE_DAYS = 21;
 
@@ -15,8 +16,10 @@ export default async function ConsignmentsPage() {
   ]);
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">عهدة الموظفين والمناديب</h1>
-      <p className="text-xs text-muted -mt-4">المندوب/الموظف اللي بيستلم العهدة بيتحدد من قائمة الموظفين المسجلين في السيستم (الإعدادات ← المستخدمين). لو المندوب مش موجود في القايمة، سجله كمستخدم/موظف الأول.</p>
+      <div>
+        <h1 className="text-xl font-bold">عهدة الموظفين والمناديب</h1>
+        <p className="text-xs text-muted mt-1">المندوب/الموظف اللي بيستلم العهدة بيتحدد من قائمة الموظفين المسجلين في السيستم (الإعدادات ← المستخدمين). لو المندوب مش موجود في القايمة، سجله كمستخدم/موظف الأول.</p>
+      </div>
       <ConsignmentForm employees={employees} locations={locations} />
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {consignments.map((c) => {
@@ -24,23 +27,51 @@ export default async function ConsignmentsPage() {
           const ageDays = oldestAt ? Math.floor((Date.now() - new Date(oldestAt).getTime()) / (24 * 60 * 60 * 1000)) : null;
           const isStale = ageDays !== null && ageDays >= STALE_DAYS;
           return (
-          <div key={c.id} className="app-card p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="font-bold">{c.holderName}</div>
-              {c.limitAmount !== null && c.limitAmount !== undefined && (
-                <div className="text-[10px] text-muted">الحد الأقصى: {money(c.limitAmount)}</div>
-              )}
-            </div>
-            {isStale && (
-              <div className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 w-fit">
-                ⚠ فيها بضاعة من {ageDays} يوم لسه معلقة (مترجعتش ولا اتباعت)
+            <div key={c.id} className="app-card p-4 space-y-3">
+              {/* الاسم والرصيد المالي جنب بعض في أعلى الكارت - أول حاجة تشوفها بنظرة واحدة */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-bold text-base truncate">{c.holderName}</div>
+                  {c.limitAmount !== null && c.limitAmount !== undefined && (
+                    <div className="text-[10px] text-muted mt-0.5">الحد الأقصى للعهدة: {money(c.limitAmount)}</div>
+                  )}
+                </div>
+                <div className="text-left flex-shrink-0">
+                  <div className="text-[10px] text-muted">{Number(c.balance) > 0 ? "عليه" : "رصيده"}</div>
+                  <div className={`text-lg font-bold ${Number(c.balance) > 0 ? "text-red-600" : "text-green-600"}`}>{money(c.balance)}</div>
+                </div>
               </div>
-            )}
-            <div className={`text-lg font-bold ${Number(c.balance) > 0 ? "text-red-600" : "text-green-600"}`}>{money(c.balance)}</div>
-            <ConsignmentLimitForm consignmentId={c.id} currentLimit={c.limitAmount} />
-            <SettleForm consignmentId={c.id} paymentMethods={paymentMethods} consignmentBalance={Number(c.balance)} />
-            <ConsignmentDetail consignmentId={c.id} locations={locations} paymentMethods={paymentMethods} />
-          </div>
+
+              {isStale && (
+                <div className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 w-fit">
+                  ⚠ فيها بضاعة من {ageDays} يوم لسه معلقة (مترجعتش ولا اتباعت)
+                </div>
+              )}
+
+              {/* ملخص البضاعة المتبقية معاه فعليًا - قبل كده كان محتاج يفتح "تفاصيل" عشان يعرف الرقم ده */}
+              <div className="flex items-center gap-4 bg-neutral-50 rounded-lg px-3 py-2 text-xs">
+                <div>
+                  <span className="text-muted">🎒 متبقي معاه: </span>
+                  <span className="font-bold">{num(c.remainingQty)} قطعة</span>
+                </div>
+                <div>
+                  <span className="text-muted">بقيمة: </span>
+                  <span className="font-bold">{money(c.remainingValue)}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <ConsignmentLimitForm consignmentId={c.id} currentLimit={c.limitAmount} />
+                <SettleForm consignmentId={c.id} paymentMethods={paymentMethods} consignmentBalance={Number(c.balance)} />
+              </div>
+
+              {/* الأصناف/رجوع/بيع من ناحية، ونشاط ومبيعات الفترة المحددة من ناحية تانية - كل واحدة
+                  فيهم منفصلة وبتتفتح لوحدها عشان الكارت يفضل مضغوط لحد ما تحتاجها فعليًا */}
+              <div className="flex items-center gap-4 border-t pt-2 flex-wrap">
+                <ConsignmentDetail consignmentId={c.id} locations={locations} paymentMethods={paymentMethods} />
+                <ConsignmentActivity holderId={c.holderId} />
+              </div>
+            </div>
           );
         })}
         {consignments.length === 0 && <p className="text-muted text-sm">لا يوجد عهدة مسجلة بعد</p>}
