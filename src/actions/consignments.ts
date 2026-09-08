@@ -174,30 +174,11 @@ export async function setConsignmentLimit(consignmentId: string, limitAmount: nu
   }
 }
 
-export async function settleConsignment(consignmentId: string, amount: number, paymentMethodId: string) {
-  try {
-    return await settleConsignmentInner(consignmentId, amount, paymentMethodId);
-  } catch (e) {
-    return toActionError(e, "تعذر تسجيل التسوية");
-  }
-}
-
-async function settleConsignmentInner(consignmentId: string, amount: number, paymentMethodId: string) {
-  await requirePermission("consignments.manage");
-  const session = await requireSession();
-  await db.transaction(async (tx) => {
-    await updateConsignmentBalance(tx, consignmentId, -amount);
-    await postCashByPaymentMethod(tx, paymentMethodId, "COLLECTION_IN", amount, {
-      note: "تسوية عهدة",
-      refType: "Consignment",
-      refId: consignmentId,
-      createdById: session.userId,
-    });
-  });
-  await logAudit({ action: "SETTLE", entityType: "Consignment", entityId: consignmentId, after: { amount } });
-  revalidatePath("/consignments");
-  revalidatePath("/cash");
-}
+// ملحوظة: دالة "settleConsignment" (تسوية مديونية الموظف بمبلغ نقدي مباشر من غير ربطه ببيع/رجوع
+// بضاعة فعلي) اتشالت عن قصد - كانت بتسمح إن رصيد المديونية يقل من غير ما جدول الأصناف (البضاعة
+// اللي لسه معاه) يتحدّث، فكان بيحصل تعارض بين الرقمين. الطريقة الوحيدة دلوقتي لتقليل مديونية
+// الموظف هي فعليًا "بيع من عهدة" (sellFromConsignment/settleConsignmentItemMixed) أو "رجوع بضاعة"
+// (returnConsignmentItems) - الاتنين مرتبطين بصنف حقيقي فبيفضل الرصيد المالي وجدول الأصناف متطابقين.
 
 export async function getConsignmentItems(consignmentId: string) {
   await requirePermission("consignments.manage");

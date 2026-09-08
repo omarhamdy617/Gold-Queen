@@ -30,11 +30,12 @@ export default function ConsignmentDetail({ consignmentId, locations, paymentMet
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const router = useRouter();
 
-  // نموذج "توزيع الباقي": حدد أي جزء يترجع للمخزون وأي جزء يتباع لعميل حقيقي - في نفس الوقت لنفس الصنف
+  // نموذج "بيع" منفصل تمامًا عن نموذج "رجوع البضاعة" فوق - كانوا قبل كده مدموجين في نموذج واحد
+  // ("توزيع الباقي" بيرجّع جزء ويبيع جزء في نفس الخطوة) وده كان بيلخبط لأن العملية كانت مش واضحة
+  // إيه اللي بيحصل بالظبط. دلوقتي: الرجوع من هنا فوق بس، والبيع من هنا تحت بس - كل عملية لوحدها.
   const [sellItemId, setSellItemId] = useState<string | null>(null);
   const [sellQty, setSellQty] = useState("");
   const [sellPrice, setSellPrice] = useState("");
-  const [extraReturnQty, setExtraReturnQty] = useState("");
   const [sellLocationId, setSellLocationId] = useState(locations[0]?.id || "");
   const [sellPaymentMethodId, setSellPaymentMethodId] = useState(paymentMethods[0]?.id || "");
   const [sellCustomerName, setSellCustomerName] = useState("");
@@ -94,37 +95,30 @@ export default function ConsignmentDetail({ consignmentId, locations, paymentMet
     setSellError("");
     if (!sellItemId) return;
     const q = parseInt(sellQty) || 0;
-    const returnQ = parseInt(extraReturnQty) || 0;
-    if (q <= 0 && returnQ <= 0) return setSellError("أدخل كمية بيع أو كمية إرجاع على الأقل");
+    if (q <= 0) return setSellError("أدخل كمية البيع");
     if (!sellLocationId) return setSellError("اختار المكان");
-    if (q > 0) {
-      const price = parseFloat(sellPrice);
-      if (!Number.isFinite(price) || price < 0) return setSellError("أدخل سعر بيع صحيح");
-      if (!sellPaymentMethodId) return setSellError("اختار طريقة التحصيل");
-    }
+    const price = parseFloat(sellPrice);
+    if (!Number.isFinite(price) || price < 0) return setSellError("أدخل سعر بيع صحيح");
+    if (!sellPaymentMethodId) return setSellError("اختار طريقة التحصيل");
     start(async () => {
       try {
         const result = await settleConsignmentItemMixed({
           consignmentItemId: sellItemId,
           locationId: sellLocationId,
-          returnQuantity: returnQ > 0 ? returnQ : undefined,
-          sale:
-            q > 0
-              ? {
-                  quantity: q,
-                  unitPrice: parseFloat(sellPrice),
-                  paymentMethodId: sellPaymentMethodId,
-                  customerName: sellCustomerName.trim() || undefined,
-                  customerPhone: sellCustomerPhone.trim() || undefined,
-                }
-              : undefined,
+          sale: {
+            quantity: q,
+            unitPrice: price,
+            paymentMethodId: sellPaymentMethodId,
+            customerName: sellCustomerName.trim() || undefined,
+            customerPhone: sellCustomerPhone.trim() || undefined,
+          },
         });
         if (isActionError(result)) { setSellError(result.error); return; }
-        setSellItemId(null); setSellQty(""); setSellPrice(""); setExtraReturnQty(""); setSellCustomerName(""); setSellCustomerPhone("");
+        setSellItemId(null); setSellQty(""); setSellPrice(""); setSellCustomerName(""); setSellCustomerPhone("");
         await refreshItems();
         router.refresh();
       } catch (e: any) {
-        setSellError(friendlyErrorMessage(e, "تعذر تنفيذ العملية"));
+        setSellError(friendlyErrorMessage(e, "تعذر تسجيل البيع"));
       }
     });
   }
@@ -132,7 +126,7 @@ export default function ConsignmentDetail({ consignmentId, locations, paymentMet
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className="text-xs text-primary underline">
-        تفاصيل البضاعة / بيع / تسجيل رجوع
+        تفاصيل البضاعة (بيع أو رجوع - كل عملية لوحدها)
       </button>
     );
   }
@@ -148,7 +142,7 @@ export default function ConsignmentDetail({ consignmentId, locations, paymentMet
         <>
           <table className="w-full text-xs text-right">
             <thead className="text-muted border-b">
-              <tr><th className="py-1">المنتج</th><th>الكمية اللي معاه</th><th>المتبقي فعليًا</th><th>الاستلام</th><th>كمية الرجوع</th><th></th></tr>
+              <tr><th className="py-1">المنتج</th><th>الكمية اللي معاه</th><th>المتبقي فعليًا</th><th>الاستلام</th><th>كمية الرجوع للمخزون</th><th>بيع لعميل</th></tr>
             </thead>
             <tbody>
               {items.map((it) => {
@@ -198,10 +192,10 @@ export default function ConsignmentDetail({ consignmentId, locations, paymentMet
                       {remaining > 0 && (
                         <button
                           type="button"
-                          onClick={() => { setSellItemId(it.id); setSellQty(String(remaining)); setSellPrice(it.unitPrice); setExtraReturnQty(""); setSellError(""); }}
+                          onClick={() => { setSellItemId(it.id); setSellQty(String(remaining)); setSellPrice(it.unitPrice); setSellError(""); }}
                           className="text-[11px] text-gold underline"
                         >
-                          بيع / توزيع الباقي
+                          بيع
                         </button>
                       )}
                     </td>
@@ -210,7 +204,8 @@ export default function ConsignmentDetail({ consignmentId, locations, paymentMet
               })}
             </tbody>
           </table>
-          <div className="flex items-center gap-2">
+          <div className="bg-neutral-50 border rounded-lg p-2.5 flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-semibold">↩️ رجوع بضاعة للمخزن:</span>
             <label className="text-xs text-muted">هترجع فين؟</label>
             <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className="border rounded px-2 py-1 text-xs">
               {locations.map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -218,42 +213,39 @@ export default function ConsignmentDetail({ consignmentId, locations, paymentMet
             <button disabled={pending} onClick={submitReturn} className="bg-navy text-white rounded px-3 py-1.5 text-xs">
               {pending ? "جارٍ التسجيل..." : "تسجيل رجوع البضاعة"}
             </button>
+            <span className="text-[10px] text-muted w-full">اكتب كمية الرجوع في عمود "كمية الرجوع للمخزون" في الجدول فوق للصنف اللي عايز ترجعه، بعدين دوس الزرار ده</span>
           </div>
           {error && <div className="text-red-600 text-xs">{error}</div>}
         </>
       )}
 
       {sellItemId && (
-        <div className="bg-neutral-50 border rounded-lg p-3 space-y-2 mt-2">
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2 mt-2">
           <div className="text-xs font-semibold">
-            توزيع "{items?.find((i) => i.id === sellItemId)?.productName}" - ابيع جزء لعميل وارجع الباقي (أو أي منهم لوحده) في خطوة واحدة
+            🧾 تسجيل بيع "{items?.find((i) => i.id === sellItemId)?.productName}" لعميل - هيتعمل فاتورة تلقائي
           </div>
           <div className="grid sm:grid-cols-2 gap-2">
             <div>
-              <label className="text-[10px] text-muted block mb-0.5">الكمية المباعة لعميل (اختياري)</label>
-              <input type="number" min={0} placeholder="0" value={sellQty} onChange={(e) => setSellQty(e.target.value)} className="border rounded px-2 py-1.5 text-sm w-full" />
+              <label className="text-[10px] text-muted block mb-0.5">الكمية المباعة</label>
+              <input type="number" min={1} placeholder="0" value={sellQty} onChange={(e) => setSellQty(e.target.value)} className="border rounded px-2 py-1.5 text-sm w-full" />
             </div>
             <div>
               <label className="text-[10px] text-muted block mb-0.5">سعر البيع للعميل</label>
               <input type="number" step="0.01" placeholder="سعر البيع" value={sellPrice} onChange={(e) => setSellPrice(e.target.value)} className="border rounded px-2 py-1.5 text-sm w-full" />
             </div>
-            <div>
-              <label className="text-[10px] text-muted block mb-0.5">كمية هترجع للمخزون كمان (اختياري)</label>
-              <input type="number" min={0} placeholder="0" value={extraReturnQty} onChange={(e) => setExtraReturnQty(e.target.value)} className="border rounded px-2 py-1.5 text-sm w-full" />
-            </div>
             <select value={sellLocationId} onChange={(e) => setSellLocationId(e.target.value)} className="border rounded px-2 py-1.5 text-sm">
-              {locations.map((l: any) => <option key={l.id} value={l.id}>مكان الفاتورة/الرجوع: {l.name}</option>)}
+              {locations.map((l: any) => <option key={l.id} value={l.id}>مكان الفاتورة: {l.name}</option>)}
             </select>
-            <input placeholder="اسم العميل (اختياري)" value={sellCustomerName} onChange={(e) => setSellCustomerName(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
-            <input placeholder="رقم هاتف العميل (اختياري)" value={sellCustomerPhone} onChange={(e) => setSellCustomerPhone(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
             <select value={sellPaymentMethodId} onChange={(e) => setSellPaymentMethodId(e.target.value)} className="border rounded px-2 py-1.5 text-sm">
               {paymentMethods.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
+            <input placeholder="اسم العميل (اختياري)" value={sellCustomerName} onChange={(e) => setSellCustomerName(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
+            <input placeholder="رقم هاتف العميل (اختياري)" value={sellCustomerPhone} onChange={(e) => setSellCustomerPhone(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
           </div>
           {sellError && <div className="text-red-600 text-xs">{sellError}</div>}
           <div className="flex gap-2">
             <button disabled={pending} onClick={submitSell} className="bg-gold text-white rounded px-3 py-1.5 text-xs">
-              {pending ? "جارٍ الحفظ..." : "تنفيذ"}
+              {pending ? "جارٍ الحفظ..." : "تسجيل البيع"}
             </button>
             <button type="button" onClick={() => setSellItemId(null)} className="text-xs text-muted">إلغاء</button>
           </div>

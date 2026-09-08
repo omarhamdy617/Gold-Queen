@@ -3,7 +3,6 @@ import { listLocations } from "@/actions/products";
 import { listPaymentMethods } from "@/actions/cash";
 import { money, num } from "@/lib/format";
 import ConsignmentForm from "./ConsignmentForm";
-import SettleForm from "./SettleForm";
 import ConsignmentDetail from "./ConsignmentDetail";
 import ConsignmentLimitForm from "./ConsignmentLimitForm";
 import ConsignmentActivity from "./ConsignmentActivity";
@@ -60,10 +59,13 @@ export default async function ConsignmentsPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <ConsignmentLimitForm consignmentId={c.id} currentLimit={c.limitAmount} />
-                <SettleForm consignmentId={c.id} paymentMethods={paymentMethods} consignmentBalance={Number(c.balance)} />
-              </div>
+              <ConsignmentLimitForm consignmentId={c.id} currentLimit={c.limitAmount} />
+
+              {/* شلنا زرار "التسوية" (مبلغ نقدي منفصل بيقلل المديونية من غير ما يترتبط ببضاعة
+                  فعلية) - كان بيسبب تعارض بين الرصيد المالي وجدول الأصناف (المديونية تقل والبضاعة
+                  تفضل شكلها "لسه معاه"). دلوقتي الطريقة الوحيدة لتقليل مديونية الموظف هي فعليًا
+                  تسجيل بيع (فاتورة حقيقية) أو رجوع بضاعة - عن طريق "تفاصيل البضاعة" تحت، فالرصيد
+                  المالي وجدول الأصناف بيفضلوا متطابقين دايمًا. */}
 
               {/* الأصناف/رجوع/بيع من ناحية، ونشاط ومبيعات الفترة المحددة من ناحية تانية - كل واحدة
                   فيهم منفصلة وبتتفتح لوحدها عشان الكارت يفضل مضغوط لحد ما تحتاجها فعليًا */}
