@@ -5,6 +5,7 @@ import { money, num } from "@/lib/format";
 import ConsignmentForm from "./ConsignmentForm";
 import ConsignmentPanels from "./ConsignmentPanels";
 import ConsignmentLimitForm from "./ConsignmentLimitForm";
+import ConsignmentLeaderboard from "./ConsignmentLeaderboard";
 
 const STALE_DAYS = 21;
 
@@ -18,6 +19,7 @@ export default async function ConsignmentsPage() {
         <h1 className="text-xl font-bold">عهدة الموظفين والمناديب</h1>
         <p className="text-xs text-muted mt-1">المندوب/الموظف اللي بيستلم العهدة بيتحدد من قائمة الموظفين المسجلين في السيستم (الإعدادات ← المستخدمين). لو المندوب مش موجود في القايمة، سجله كمستخدم/موظف الأول.</p>
       </div>
+      <ConsignmentLeaderboard />
       <ConsignmentForm employees={employees} locations={locations} />
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {consignments.map((c) => {

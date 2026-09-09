@@ -1,6 +1,6 @@
 "use server";
 import { db, schema } from "@/db";
-import { eq, and, gte, lte, like, desc } from "drizzle-orm";
+import { eq, and, gte, lte, like, desc, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { requirePermission, requireSession, logAudit, genCode } from "@/lib/auth";
 import { adjustStock, updateConsignmentBalance, postCashByPaymentMethod, stockShortageMessage, checkConsignmentLimit } from "@/lib/ops";
@@ -539,5 +539,38 @@ export async function getConsignmentActivity(holderId: string, from: Date, to: D
     return { count: rows.length, total, invoices: rows };
   } catch (e) {
     return toActionError(e, "تعذر تحميل نشاط الموظف");
+  }
+}
+
+// -------------------- ترتيب مبيعات العهدة لكل المناديب مع بعض --------------------
+// getConsignmentActivity فوق بتوري نشاط موظف واحد بس (لازم تفتح كل عهدة لوحدها). الدالة دي بتجمّع
+// نفس نوع الفواتير (بيع من عهدة الموظف - نفس شرط notes LIKE المستخدم فوق بالظبط) لكل المناديب مع
+// بعض في استعلام واحد بس (GROUP BY على soldById)، عشان تشوف "مين باع بكام" في شاشة واحدة من غير
+// ما تفتح كل عهدة لوحدها - استعلام واحد ثابت بغض النظر عن عدد المناديب، فمفيش أي خطر تكرار حادثة
+// صفحة الأرباح (48 استعلام).
+export async function getConsignmentSalesLeaderboard(from: Date, to: Date) {
+  try {
+    await requirePermission("consignments.manage");
+    const rows = await db
+      .select({
+        holderId: schema.salesInvoices.soldById,
+        holderName: schema.users.fullName,
+        count: sql<number>`count(*)`,
+        total: sql<string>`coalesce(sum(${schema.salesInvoices.total}), 0)`,
+      })
+      .from(schema.salesInvoices)
+      .innerJoin(schema.users, eq(schema.salesInvoices.soldById, schema.users.id))
+      .where(
+        and(
+          like(schema.salesInvoices.notes, "بيع من عهدة الموظف%"),
+          gte(schema.salesInvoices.createdAt, from),
+          lte(schema.salesInvoices.createdAt, to)
+        )
+      )
+      .groupBy(schema.salesInvoices.soldById, schema.users.fullName)
+      .orderBy(desc(sql`coalesce(sum(${schema.salesInvoices.total}), 0)`));
+    return rows.map((r) => ({ holderId: r.holderId as string, holderName: r.holderName, count: r.count, total: Number(r.total) }));
+  } catch (e) {
+    return toActionError(e, "تعذر تحميل ترتيب مبيعات العهدة");
   }
 }
