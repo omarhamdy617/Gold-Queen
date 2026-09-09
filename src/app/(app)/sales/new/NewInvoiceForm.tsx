@@ -19,6 +19,8 @@ export default function NewInvoiceForm({ products, locations, customers: initial
   const [lines, setLines] = useState<Line[]>([{ productId: "", quantity: "1", unitPrice: "", serials: "" }]);
   const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
   const [discountValue, setDiscountValue] = useState("0");
+  const [vatEnabled, setVatEnabled] = useState(false);
+  const [vatRate, setVatRate] = useState("14");
   const [paymentStatus, setPaymentStatus] = useState<"PAID" | "UNPAID" | "PARTIAL">("PAID");
   const [paidAmount, setPaidAmount] = useState("");
   const [paymentMethodId, setPaymentMethodId] = useState(paymentMethods[0]?.id || "");
@@ -31,7 +33,9 @@ export default function NewInvoiceForm({ products, locations, customers: initial
   const validLines = lines.filter((l) => l.productId && parseFloat(l.quantity) > 0);
   const subtotal = validLines.reduce((s, l) => s + (parseFloat(l.quantity) || 0) * (parseFloat(l.unitPrice) || 0), 0);
   const discount = discountType === "percent" ? (subtotal * (parseFloat(discountValue) || 0)) / 100 : parseFloat(discountValue) || 0;
-  const total = Math.max(subtotal - discount, 0);
+  const afterDiscount = Math.max(subtotal - discount, 0);
+  const vatAmount = vatEnabled ? afterDiscount * ((parseFloat(vatRate) || 0) / 100) : 0;
+  const total = afterDiscount + vatAmount;
 
   function setLine(idx: number, patch: Partial<Line>) {
     const next = [...lines];
@@ -78,6 +82,8 @@ export default function NewInvoiceForm({ products, locations, customers: initial
             serials: l.serials ? l.serials.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
           })),
           discount,
+          vatEnabled,
+          vatRate: vatEnabled ? parseFloat(vatRate) || 0 : undefined,
           paymentStatus,
           paidAmount: paid,
           paymentMethodId: paid > 0 ? paymentMethodId : undefined,
@@ -176,6 +182,18 @@ export default function NewInvoiceForm({ products, locations, customers: initial
             </div>
           </div>
           <div>
+            <label className="text-xs text-muted mb-1 block">ضريبة القيمة المضافة</label>
+            <div className="flex gap-2 items-center">
+              <label className="flex items-center gap-1.5 text-sm">
+                <input type="checkbox" checked={vatEnabled} onChange={(e) => setVatEnabled(e.target.checked)} /> تفعيل
+              </label>
+              {vatEnabled && (
+                <input type="number" step="0.01" value={vatRate} onChange={(e) => setVatRate(e.target.value)} className="border rounded px-2 py-2 text-sm w-20" />
+              )}
+              {vatEnabled && <span className="text-xs text-muted">%</span>}
+            </div>
+          </div>
+          <div>
             <label className="text-xs text-muted mb-1 block">حالة السداد</label>
             <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value as any)} className="border rounded px-3 py-2 text-sm w-full">
               <option value="PAID">مدفوع بالكامل</option>
@@ -198,9 +216,10 @@ export default function NewInvoiceForm({ products, locations, customers: initial
             </>
           )}
         </div>
-        <div className="text-sm text-muted flex justify-between border-t border-border pt-2">
+        <div className="text-sm text-muted flex justify-between border-t border-border pt-2 flex-wrap gap-1">
           <span>الإجمالي الفرعي: {subtotal.toFixed(2)} ج.م</span>
           <span>الخصم: {discount.toFixed(2)} ج.م</span>
+          {vatEnabled && <span>الضريبة ({vatRate}%): {vatAmount.toFixed(2)} ج.م</span>}
         </div>
       </div>
 

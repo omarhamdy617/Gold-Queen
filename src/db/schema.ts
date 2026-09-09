@@ -433,6 +433,12 @@ export const salesInvoices = pgTable("sales_invoices", {
     .references(() => locations.id),
   subtotal: money("subtotal").notNull(),
   discount: money("discount").notNull().default("0"),
+  // ضريبة القيمة المضافة - نفس عمودين vat_enabled/vat_rate الموجودين في جدول quotes بالظبط (نفس
+  // الفكرة والقيود)، عشان فاتورة البيع تقدر تضيف الضريبة زي عرض السعر بالظبط. النسبة نفسها بتتحسب
+  // على الإجمالي بعد الخصم (subtotal - discount)، ومحفوظة هنا للأرشيف حتى لو المستخدم غيّر النسبة
+  // الافتراضية في الإعدادات بعد كده - فاتورة قديمة لازم تفضل عارضة النسبة اللي اتحسبت بيها فعليًا.
+  vatEnabled: boolean("vat_enabled").notNull().default(false),
+  vatRate: numeric("vat_rate", { precision: 5, scale: 2 }),
   total: money("total").notNull(),
   paidAmount: money("paid_amount").notNull().default("0"),
   paymentStatus: invoicePaymentStatusEnum("payment_status").notNull().default("PAID"),

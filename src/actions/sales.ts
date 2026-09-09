@@ -16,6 +16,8 @@ type InvoiceInput = {
   locationId: string;
   items: { productId: string; quantity: number; unitPrice: number; serials?: string[] }[];
   discount: number;
+  vatEnabled?: boolean;
+  vatRate?: number;
   paymentStatus: "PAID" | "UNPAID" | "PARTIAL";
   paidAmount: number;
   paymentMethodId?: string;
@@ -67,14 +69,22 @@ async function createSalesInvoiceInner(input: InvoiceInput) {
   }
 
   const subtotal = input.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-  const total = subtotal - input.discount;
-  if (total < 0) throw new Error("الخصم أكبر من إجمالي الفاتورة - راجع القيم");
+  const afterDiscount = subtotal - input.discount;
+  if (afterDiscount < 0) throw new Error("الخصم أكبر من إجمالي الفاتورة - راجع القيم");
 
   // خصم أكبر من 10% من إجمالي الفاتورة يحتاج صلاحية خاصة
   if (subtotal > 0 && input.discount / subtotal > 0.1) {
     const allowed = await can("sales.discount.large");
     if (!allowed) throw new Error("الخصم اللي حاطه أكبر من المسموح - محتاج صلاحية \"منح خصم كبير\"");
   }
+
+  // ضريبة القيمة المضافة - نفس منطق عرض السعر (createQuoteInner) بالظبط: نسبة اختيارية على
+  // الإجمالي بعد الخصم. لو الضريبة مفعّلة لازم نتأكد من صحة النسبة قبل ما نحسب عليها أي حاجة.
+  if (input.vatEnabled && (input.vatRate === undefined || input.vatRate === null || !Number.isFinite(input.vatRate) || input.vatRate < 0)) {
+    throw new Error("نسبة الضريبة لازم تكون رقم صحيح (مش سالب)");
+  }
+  const vatAmount = input.vatEnabled && input.vatRate ? afterDiscount * (input.vatRate / 100) : 0;
+  const total = afterDiscount + vatAmount;
 
   const result = await db.transaction(async (tx) => {
     // ربط/إنشاء العميل تلقائيًا بالهاتف لو مبعتش customerId جاهز (اختيار من البحث) وبعتّ اسم و/أو رقم هاتف بس -
@@ -124,6 +134,8 @@ async function createSalesInvoiceInner(input: InvoiceInput) {
         locationId: input.locationId,
         subtotal: subtotal.toFixed(2),
         discount: input.discount.toFixed(2),
+        vatEnabled: input.vatEnabled || false,
+        vatRate: input.vatEnabled ? input.vatRate?.toFixed(2) : undefined,
         total: total.toFixed(2),
         paidAmount: input.paidAmount.toFixed(2),
         paymentStatus: input.paymentStatus,
