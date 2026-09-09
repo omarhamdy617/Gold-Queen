@@ -7,6 +7,7 @@ import { getReturnReasons } from "@/actions/settings";
 import { money, dateAr } from "@/lib/format";
 import ReturnForm from "./ReturnForm";
 import ApproveControls from "./ApproveControls";
+import ReturnDetailToggle from "./ReturnDetailToggle";
 
 export default async function ReturnsPage() {
   const [returns, products, customers, suppliers, locations, paymentMethods, reasons] = await Promise.all([
@@ -17,23 +18,26 @@ export default async function ReturnsPage() {
       <h1 className="text-xl font-bold">المرتجعات (لازم اعتماد أدمن)</h1>
       <ReturnForm products={products} customers={customers} suppliers={suppliers} reasons={reasons} />
       <div className="app-card overflow-x-auto">
-        <table className="w-full text-sm text-right min-w-[900px]">
+        <table className="w-full text-sm text-right min-w-[1080px]">
           <thead>
             <tr className="border-b text-muted">
-              <th className="p-3">الكود</th><th>النوع</th><th>المبلغ</th><th>السبب</th><th>ملاحظات</th><th>صورة</th><th>الحالة</th><th>التاريخ</th><th></th>
+              <th className="p-3">الكود</th><th>النوع</th><th>العميل/المورد</th><th>الفاتورة</th><th>المبلغ</th><th>السبب</th><th>ملاحظات</th><th>صورة</th><th>الحالة</th><th>التاريخ</th><th>الأصناف</th><th></th>
             </tr>
           </thead>
           <tbody>
             {returns.map((r) => (
-              <tr key={r.id} className="border-b last:border-0">
+              <tr key={r.id} className="border-b last:border-0 align-top">
                 <td className="p-3 font-mono text-xs">{r.code}</td>
                 <td>{r.kind === "SALE_RETURN" ? "مرتجع بيع" : "مرتجع شراء"}</td>
+                <td className="text-xs">{r.kind === "SALE_RETURN" ? (r.customerName || "بدون عميل مسجل (نقدي)") : (r.supplierName || "-")}</td>
+                <td className="font-mono text-xs">{r.invoiceCode || "-"}</td>
                 <td>{money(r.totalAmount)}</td>
                 <td className="text-muted text-xs">{r.reasonCategory}</td>
                 <td className="text-muted text-xs max-w-[160px]">{r.reason}</td>
                 <td>{r.imageUrl && <a href={r.imageUrl} target="_blank" className="text-primary text-xs underline">عرض</a>}</td>
                 <td>{statusBadge(r.status)}</td>
                 <td>{dateAr(r.createdAt)}</td>
+                <td><ReturnDetailToggle id={r.id} /></td>
                 <td>{r.status === "PENDING" && <ApproveControls id={r.id} locations={locations} paymentMethods={paymentMethods} totalAmount={r.totalAmount} kind={r.kind} />}</td>
               </tr>
             ))}

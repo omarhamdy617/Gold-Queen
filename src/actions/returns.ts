@@ -1,6 +1,6 @@
 "use server";
 import { db, schema } from "@/db";
-import { eq, desc, and, ne, inArray } from "drizzle-orm";
+import { eq, desc, and, ne, inArray, like } from "drizzle-orm";
 import { requirePermission, requireSession, logAudit, genCode } from "@/lib/auth";
 import { adjustStock, updateCustomerBalance, updateSupplierBalance, postCashByPaymentMethod } from "@/lib/ops";
 import { toActionError } from "@/lib/actionError";
@@ -27,6 +27,32 @@ export async function listCustomerInvoicesForReturn(customerId: string) {
     .where(eq(schema.salesInvoices.customerId, customerId))
     .orderBy(desc(schema.salesInvoices.createdAt))
     .limit(100);
+}
+
+// -------------------- إيجاد فاتورة مباشرة بالكود --------------------
+// طريقة تانية بديلة عن "اختر العميل الأول" - مفيدة تحديدًا للفواتير النقدية اللي اتسجلت من غير عميل
+// مسجل خالص (customerId فاضي)، واللي شاشة "اختر العميل" الأساسية مش قادرة توصلها أصلًا لأنها بتفلتر
+// فواتير عميل محدد بس. البحث هنا بالكود مش مربوط بعميل، فبيشتغل لأي فاتورة سواء ليها عميل مسجل أو لأ.
+export async function searchInvoicesForReturn(codeQuery: string) {
+  await requirePermission("returns.create");
+  const q = codeQuery.trim();
+  if (!q) return [];
+  return db
+    .select({
+      id: schema.salesInvoices.id,
+      code: schema.salesInvoices.code,
+      total: schema.salesInvoices.total,
+      paidAmount: schema.salesInvoices.paidAmount,
+      paymentStatus: schema.salesInvoices.paymentStatus,
+      createdAt: schema.salesInvoices.createdAt,
+      customerId: schema.salesInvoices.customerId,
+      customerName: schema.customers.name,
+    })
+    .from(schema.salesInvoices)
+    .leftJoin(schema.customers, eq(schema.salesInvoices.customerId, schema.customers.id))
+    .where(like(schema.salesInvoices.code, `%${q}%`))
+    .orderBy(desc(schema.salesInvoices.createdAt))
+    .limit(20);
 }
 
 export async function getInvoiceItemsForReturn(invoiceId: string) {
@@ -148,9 +174,33 @@ async function createReturnRequestInner(input: Parameters<typeof createReturnReq
   return ret;
 }
 
+// عايزين اسم العميل/المورد وكود الفاتورة الأصلية يظهروا في جدول المرتجعات مباشرة - قبل كده الشاشة
+// كانت بتوري بيانات المرتجع نفسه بس (كود المرتجع، النوع، المبلغ...) من غير ما تقول "مين العميل"
+// أو "الفاتورة اللي جايه منها"، فمكانش فيه طريقة تتعرف بيها على المرتجع من غير ما تفتحه (ولو فتحته
+// مكانش فيه أصلًا شاشة تفاصيل شغالة - شوف getReturnDetail تحت). ده استعلام واحد بس بـ 3 leftJoin
+// (مش استعلام لكل صف)، فمفيش أي خطر تكرار الحادثة اللي حصلت مع صفحة الأرباح.
 export async function listReturns() {
   await requirePermission("returns.create");
-  return db.select().from(schema.returnRequests).orderBy(desc(schema.returnRequests.createdAt));
+  return db
+    .select({
+      id: schema.returnRequests.id,
+      code: schema.returnRequests.code,
+      kind: schema.returnRequests.kind,
+      totalAmount: schema.returnRequests.totalAmount,
+      status: schema.returnRequests.status,
+      reasonCategory: schema.returnRequests.reasonCategory,
+      reason: schema.returnRequests.reason,
+      imageUrl: schema.returnRequests.imageUrl,
+      createdAt: schema.returnRequests.createdAt,
+      invoiceCode: schema.salesInvoices.code,
+      customerName: schema.customers.name,
+      supplierName: schema.suppliers.name,
+    })
+    .from(schema.returnRequests)
+    .leftJoin(schema.salesInvoices, eq(schema.returnRequests.invoiceId, schema.salesInvoices.id))
+    .leftJoin(schema.customers, eq(schema.returnRequests.customerId, schema.customers.id))
+    .leftJoin(schema.suppliers, eq(schema.returnRequests.supplierId, schema.suppliers.id))
+    .orderBy(desc(schema.returnRequests.createdAt));
 }
 
 export async function getReturnDetail(id: string) {

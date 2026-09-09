@@ -1,6 +1,6 @@
 "use client";
 import { useState, useTransition, useEffect } from "react";
-import { createReturnRequest, listCustomerInvoicesForReturn, getInvoiceItemsForReturn } from "@/actions/returns";
+import { createReturnRequest, listCustomerInvoicesForReturn, getInvoiceItemsForReturn, searchInvoicesForReturn } from "@/actions/returns";
 import { useRouter } from "next/navigation";
 import CustomerPicker from "@/components/CustomerPicker";
 import { friendlyErrorMessage } from "@/lib/errors";
@@ -39,21 +39,49 @@ export default function ReturnForm({ products, customers: initialCustomers, supp
   const [lines, setLines] = useState<FreeLine[]>([{ productId: "", quantity: "", unitPrice: "" }]);
 
   // -------- مرتجع البيع: اختيار الفاتورة الأصلية ثم بنودها --------
+  // طريقتين لإيجاد الفاتورة: "اختيار العميل" (الأصلية) أو "البحث بكود الفاتورة" (جديدة - عشان
+  // الفواتير النقدية اللي اتسجلت من غير عميل مسجل خالص مكانش فيه أي طريقة توصلها بيها قبل كده،
+  // لأن الطريقة الأصلية بتفلتر فواتير عميل محدد بس).
+  const [findMode, setFindMode] = useState<"customer" | "code">("customer");
   const [customerInvoices, setCustomerInvoices] = useState<any[]>([]);
   const [invoiceId, setInvoiceId] = useState("");
   const [saleLines, setSaleLines] = useState<SaleLine[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [loadingItems, setLoadingItems] = useState(false);
+  const [codeQuery, setCodeQuery] = useState("");
+  const [codeResults, setCodeResults] = useState<any[]>([]);
+  const [codeSearching, setCodeSearching] = useState(false);
+  const [foundInvoice, setFoundInvoice] = useState<any>(null);
 
   useEffect(() => {
+    // مهم: الشرط ده بيتفحص الأول قبل أي reset - عشان لما نبقى في وضع "بحث بالكود" وتغيير customerId
+    // بييجي من اختيار فاتورة من نتيجة البحث (مش من تغيير عميل حقيقي)، الـ effect ده منيمسحش invoiceId
+    // اللي المستخدم لسه واخده من نتيجة البحث على طول (كان ده بق فعلي وقت أول كتابة للكود - customerId
+    // بيتغيّر جوه onClick اختيار نتيجة البحث، فكان بيشغّل الـ reset ده فورًا ويمسح الاختيار).
+    if (kind !== "SALE_RETURN" || findMode !== "customer") { setCustomerInvoices([]); return; }
     setInvoiceId("");
     setSaleLines([]);
-    if (kind !== "SALE_RETURN" || !customerId) { setCustomerInvoices([]); return; }
+    setFoundInvoice(null);
+    if (!customerId) { setCustomerInvoices([]); return; }
     setLoadingInvoices(true);
     listCustomerInvoicesForReturn(customerId)
       .then((rows) => setCustomerInvoices(Array.isArray(rows) ? rows : []))
       .finally(() => setLoadingInvoices(false));
-  }, [kind, customerId]);
+  }, [kind, customerId, findMode]);
+
+  // بحث بكود الفاتورة - بـ debounce بسيط (300ms) عشان منبعتش استعلام لقاعدة البيانات مع كل حرف
+  useEffect(() => {
+    if (kind !== "SALE_RETURN" || findMode !== "code") return;
+    const q = codeQuery.trim();
+    if (!q) { setCodeResults([]); return; }
+    setCodeSearching(true);
+    const t = setTimeout(() => {
+      searchInvoicesForReturn(q)
+        .then((rows) => setCodeResults(Array.isArray(rows) ? rows : []))
+        .finally(() => setCodeSearching(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [codeQuery, kind, findMode]);
 
   useEffect(() => {
     if (!invoiceId) { setSaleLines([]); return; }
@@ -82,7 +110,7 @@ export default function ReturnForm({ products, customers: initialCustomers, supp
   function submit() {
     setError("");
     if (kind === "SALE_RETURN") {
-      if (!customerId) return setError("اختر العميل");
+      if (findMode === "customer" && !customerId) return setError("اختر العميل");
       if (!invoiceId) return setError("اختر الفاتورة الأصلية اللي البضاعة اترجعت منها");
       const items = saleLines.filter((l) => l.quantity && parseInt(l.quantity) > 0).map((l) => ({
         productId: l.productId,
@@ -98,7 +126,7 @@ export default function ReturnForm({ products, customers: initialCustomers, supp
       }
       start(async () => {
         try {
-          const result = await createReturnRequest({ kind, invoiceId, customerId, reasonCategory, reason: reason || undefined, imageUrl, items });
+          const result = await createReturnRequest({ kind, invoiceId, customerId: customerId || undefined, reasonCategory, reason: reason || undefined, imageUrl, items });
           if (isActionError(result)) { setError(result.error); return; }
           setOpen(false); router.refresh();
         } catch (e: any) {
@@ -131,13 +159,17 @@ export default function ReturnForm({ products, customers: initialCustomers, supp
           <option value="PURCHASE_RETURN">مرتجع شراء (لمورد)</option>
         </select>
         {kind === "SALE_RETURN" ? (
-          <CustomerPicker
-            customers={customers}
-            value={customerId}
-            onChange={(id) => setCustomerId(id)}
-            onCreated={(c) => setCustomers((prev: any) => [...prev, c])}
-            label=""
-          />
+          findMode === "customer" ? (
+            <CustomerPicker
+              customers={customers}
+              value={customerId}
+              onChange={(id) => setCustomerId(id)}
+              onCreated={(c) => setCustomers((prev: any) => [...prev, c])}
+              label=""
+            />
+          ) : (
+            <div className="text-xs text-muted self-center">البحث بكود الفاتورة تحت 👇 (مفيد لو الفاتورة نقدي من غير عميل مسجل)</div>
+          )
         ) : (
           <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="border rounded px-3 py-2 text-sm">
             <option value="">اختر المورد *</option>
@@ -167,18 +199,76 @@ export default function ReturnForm({ products, customers: initialCustomers, supp
 
       {kind === "SALE_RETURN" ? (
         <div className="space-y-2 border-t pt-3">
-          <div className="text-xs font-semibold text-muted uppercase tracking-wide">الفاتورة الأصلية والأصناف</div>
-          {!customerId && <div className="text-xs text-muted">اختر العميل الأول عشان تشوف فواتيره</div>}
-          {customerId && loadingInvoices && <div className="text-xs text-muted">بيجيب فواتير العميل...</div>}
-          {customerId && !loadingInvoices && customerInvoices.length === 0 && <div className="text-xs text-amber-700">العميل ده مفيش له فواتير بيع مسجلة</div>}
-          {customerId && customerInvoices.length > 0 && (
-            <select value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)} className="border rounded px-3 py-2 text-sm w-full">
-              <option value="">اختر الفاتورة *</option>
-              {customerInvoices.map((inv: any) => (
-                <option key={inv.id} value={inv.id}>{inv.code} - {money(inv.total)} - {dateAr(inv.createdAt)}</option>
-              ))}
-            </select>
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-semibold text-muted uppercase tracking-wide">الفاتورة الأصلية والأصناف</div>
+            <div className="flex gap-1 text-xs">
+              <button
+                type="button"
+                onClick={() => { setFindMode("customer"); setCodeQuery(""); setCodeResults([]); setInvoiceId(""); setFoundInvoice(null); }}
+                className={`px-2 py-1 rounded ${findMode === "customer" ? "bg-primary text-white" : "bg-neutral-100 text-muted"}`}
+              >
+                👤 اختيار العميل
+              </button>
+              <button
+                type="button"
+                onClick={() => { setFindMode("code"); setCustomerId(""); setInvoiceId(""); setFoundInvoice(null); }}
+                className={`px-2 py-1 rounded ${findMode === "code" ? "bg-primary text-white" : "bg-neutral-100 text-muted"}`}
+              >
+                🔍 بحث بكود الفاتورة
+              </button>
+            </div>
+          </div>
+
+          {findMode === "customer" && (
+            <>
+              {!customerId && <div className="text-xs text-muted">اختر العميل الأول عشان تشوف فواتيره</div>}
+              {customerId && loadingInvoices && <div className="text-xs text-muted">بيجيب فواتير العميل...</div>}
+              {customerId && !loadingInvoices && customerInvoices.length === 0 && <div className="text-xs text-amber-700">العميل ده مفيش له فواتير بيع مسجلة</div>}
+              {customerId && customerInvoices.length > 0 && (
+                <select value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)} className="border rounded px-3 py-2 text-sm w-full">
+                  <option value="">اختر الفاتورة *</option>
+                  {customerInvoices.map((inv: any) => (
+                    <option key={inv.id} value={inv.id}>{inv.code} - {money(inv.total)} - {dateAr(inv.createdAt)}</option>
+                  ))}
+                </select>
+              )}
+            </>
           )}
+
+          {findMode === "code" && (
+            <>
+              <input
+                value={codeQuery}
+                onChange={(e) => { setCodeQuery(e.target.value); if (!e.target.value.trim()) { setInvoiceId(""); setFoundInvoice(null); } }}
+                placeholder="اكتب كود الفاتورة أو جزء منه..."
+                className="border rounded px-3 py-2 text-sm w-full"
+              />
+              {codeSearching && <div className="text-xs text-muted">بيدور...</div>}
+              {!codeSearching && codeQuery.trim() && codeResults.length === 0 && <div className="text-xs text-amber-700">مفيش فاتورة بالكود ده</div>}
+              {!invoiceId && codeResults.length > 0 && (
+                <div className="border rounded divide-y max-h-48 overflow-y-auto">
+                  {codeResults.map((inv: any) => (
+                    <button
+                      type="button"
+                      key={inv.id}
+                      onClick={() => { setInvoiceId(inv.id); setCustomerId(inv.customerId || ""); setFoundInvoice(inv); setCodeResults([]); setCodeQuery(inv.code); }}
+                      className="w-full text-right px-3 py-2 text-sm hover:bg-neutral-50 flex justify-between"
+                    >
+                      <span>{inv.code} - {money(inv.total)} - {dateAr(inv.createdAt)}</span>
+                      <span className="text-xs text-muted">{inv.customerName || "بدون عميل مسجل (نقدي)"}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {invoiceId && foundInvoice && (
+                <div className="text-xs bg-neutral-50 border rounded px-3 py-2 flex justify-between items-center">
+                  <span>✓ الفاتورة {foundInvoice.code} - العميل: {foundInvoice.customerName || "بدون عميل مسجل (بيع نقدي)"}</span>
+                  <button type="button" onClick={() => { setInvoiceId(""); setFoundInvoice(null); }} className="text-primary underline">تغيير</button>
+                </div>
+              )}
+            </>
+          )}
+
           {invoiceId && loadingItems && <div className="text-xs text-muted">بيجيب بنود الفاتورة...</div>}
           {invoiceId && !loadingItems && saleLines.length === 0 && <div className="text-xs text-amber-700">كل بنود الفاتورة دي اترجعت بالكامل قبل كده - مفيش حاجة متاحة للإرجاع</div>}
           {invoiceId && saleLines.length > 0 && (

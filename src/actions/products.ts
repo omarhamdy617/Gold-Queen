@@ -44,6 +44,59 @@ export async function createLocation(name: string, type: "SHOP" | "WAREHOUSE" | 
   }
 }
 
+// تعديل اسم/نوع الفرع، أو تعطيله وتفعيله تاني (active) - نفس أسلوب updateCustomer/updateProduct
+// (partial update بـ active جواه بدل دالة منفصلة لكل حاجة). قبل كده مكانش فيه أي طريقة تعدّل مكان
+// اتضاف بالغلط أو تغيّر اسمه غير إنك تدخل على قاعدة البيانات يدوي.
+export async function updateLocation(id: string, data: Partial<{ name: string; type: "SHOP" | "WAREHOUSE" | "OTHER"; active: boolean }>) {
+  try {
+    await requirePermission("settings.manage");
+    const payload: Record<string, unknown> = {};
+    if (data.name !== undefined) {
+      if (!data.name.trim()) throw new Error("اسم المكان مطلوب");
+      payload.name = data.name.trim();
+    }
+    if (data.type !== undefined) payload.type = data.type;
+    if (data.active !== undefined) payload.active = data.active;
+    if (Object.keys(payload).length === 0) return;
+    await db.update(schema.locations).set(payload).where(eq(schema.locations.id, id));
+    revalidatePath("/settings");
+    revalidatePath("/products");
+  } catch (e) {
+    return toActionError(e, "تعذر تعديل المكان - يمكن الاسم ده مستخدم بالفعل لمكان تاني");
+  }
+}
+
+// حذف حقيقي للمكان - بس لو مش مرتبط بأي عملية حقيقية (مخزون، فواتير بيع/شراء، تحويلات). لو مرتبط
+// بأي حاجة من دول، بنرفض الحذف برسالة توضح السبب وننصح بزرار "تعطيل" بدل الحذف - عشان حذف مكان له
+// تاريخ حركة كان هيسيب صفوف يتيمة أو يكسر أي شاشة/تقرير بيعتمد على locationId ده (الفواتير مثلًا
+// عمودها location_id NOT NULL، فحذف حقيقي كان هيبوّظ أي فاتورة قديمة مرتبطة بيه).
+export async function deleteLocation(id: string) {
+  try {
+    await requirePermission("settings.manage");
+    const [stockRow] = await db
+      .select({ id: schema.stocks.id })
+      .from(schema.stocks)
+      .where(and(eq(schema.stocks.locationId, id), sql`${schema.stocks.quantity} <> 0`))
+      .limit(1);
+    if (stockRow) throw new Error("متقدرش تمسح المكان ده - لسه فيه مخزون بضاعة مسجل عليه. انقل أو صفّر المخزون الأول، أو استخدم زرار التعطيل بدل الحذف.");
+    const [invRow] = await db.select({ id: schema.salesInvoices.id }).from(schema.salesInvoices).where(eq(schema.salesInvoices.locationId, id)).limit(1);
+    if (invRow) throw new Error("متقدرش تمسح المكان ده - مرتبط بفواتير بيع سابقة. استخدم زرار التعطيل بدل الحذف عشان تحافظ على سجل الفواتير القديمة.");
+    const [purRow] = await db.select({ id: schema.purchases.id }).from(schema.purchases).where(eq(schema.purchases.locationId, id)).limit(1);
+    if (purRow) throw new Error("متقدرش تمسح المكان ده - مرتبط بفواتير شراء سابقة. استخدم زرار التعطيل بدل الحذف.");
+    const [trRow] = await db
+      .select({ id: schema.stockTransfers.id })
+      .from(schema.stockTransfers)
+      .where(or(eq(schema.stockTransfers.fromLocationId, id), eq(schema.stockTransfers.toLocationId, id)))
+      .limit(1);
+    if (trRow) throw new Error("متقدرش تمسح المكان ده - مرتبط بتحويلات مخزون سابقة. استخدم زرار التعطيل بدل الحذف.");
+    await db.delete(schema.locations).where(eq(schema.locations.id, id));
+    revalidatePath("/settings");
+    revalidatePath("/products");
+  } catch (e) {
+    return toActionError(e, "تعذر حذف المكان");
+  }
+}
+
 // نفس مشكلة كود الفاتورة القديمة بالظبط: Math.random() ضيق كان بيزوّد احتمال تكرار الكود مع زيادة
 // عدد المنتجات ويوقّع خطأ غامض بدل ما يتحفظ المنتج. استخدمنا crypto.randomBytes بدل كده زي الفاتورة.
 function genSku() {
