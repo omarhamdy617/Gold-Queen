@@ -97,94 +97,86 @@ export async function getManagementOverview(periodKey: PeriodKey, customFrom?: s
 
     const since60 = new Date(Date.now() - 60 * 86400000);
 
-    // كل الاستعلامات دي مستقلة عن بعضها (مفيش نتيجة واحدة محتاجة نتيجة استعلام تاني) - كانت بتتجاب
-    // واحد ورا التاني (await منفصل لكل واحد) وده كان بيخلي الوقت الكلي = مجموع كل الاستعلامات + زمن
-    // الرحلة (round trip) لكل واحد منهم على حدة لقاعدة البيانات، وده بيبقى ملموس أكتر كل ما الفترة
-    // المختارة أطول (زي "السنة دي") لأن كل استعلام بياخد وقت أطول شوية مع زيادة عدد الصفوف. دلوقتي
-    // بنجيبهم مع بعض بـ Promise.all عشان الوقت الكلي يبقى بطول أبطأ استعلام واحد مش مجموعهم - نفس
-    // مبدأ صفحة الأوردرات اللي بتجيب 8 حاجات مع بعض بالظبط (شوف تعليق db/index.ts عن max:10). عدد
-    // الاستعلامات المرسلة لقاعدة البيانات ثابت زي ما هو تمامًا، بس بيتبعتوا مع بعض بدل الترتيب.
-    const [
-      [salesCmp],
-      [profitCmp],
-      [returnProfitCmp],
-      [expenseCmp],
-      expenseCategories,
-      customers,
-      totalPayable,
-      drawers,
-      stockRows,
-      soldRows60,
-      pendingReturnsRows,
-      consignmentsRows,
-    ] = await Promise.all([
-      db
-        .select({
-          curTotal: sql<string>`coalesce(sum(${schema.salesInvoices.total}) filter (where ${schema.salesInvoices.createdAt} >= ${from.toISOString()}), 0)`,
-          curCount: sql<number>`count(*) filter (where ${schema.salesInvoices.createdAt} >= ${from.toISOString()})`,
-          prevTotal: sql<string>`coalesce(sum(${schema.salesInvoices.total}) filter (where ${schema.salesInvoices.createdAt} < ${from.toISOString()}), 0)`,
-          prevCount: sql<number>`count(*) filter (where ${schema.salesInvoices.createdAt} < ${from.toISOString()})`,
-        })
-        .from(schema.salesInvoices)
-        .where(and(gte(schema.salesInvoices.createdAt, prevFrom), lte(schema.salesInvoices.createdAt, to))),
-      db
-        .select({
-          curProfit: sql<string>`coalesce(sum((${schema.salesInvoiceItems.unitPrice} - ${schema.salesInvoiceItems.unitCost}) * ${schema.salesInvoiceItems.quantity}) filter (where ${schema.salesInvoices.createdAt} >= ${from.toISOString()}), 0)`,
-          prevProfit: sql<string>`coalesce(sum((${schema.salesInvoiceItems.unitPrice} - ${schema.salesInvoiceItems.unitCost}) * ${schema.salesInvoiceItems.quantity}) filter (where ${schema.salesInvoices.createdAt} < ${from.toISOString()}), 0)`,
-        })
-        .from(schema.salesInvoiceItems)
-        .innerJoin(schema.salesInvoices, eq(schema.salesInvoiceItems.invoiceId, schema.salesInvoices.id))
-        .where(and(gte(schema.salesInvoices.createdAt, prevFrom), lte(schema.salesInvoices.createdAt, to))),
-      db
-        .select({
-          curProfit: sql<string>`coalesce(sum((${schema.returnItems.unitPrice} - coalesce(${schema.salesInvoiceItems.unitCost}, ${schema.products.avgCost}, 0)) * ${schema.returnItems.quantity}) filter (where ${schema.returnRequests.approvedAt} >= ${from.toISOString()}), 0)`,
-          prevProfit: sql<string>`coalesce(sum((${schema.returnItems.unitPrice} - coalesce(${schema.salesInvoiceItems.unitCost}, ${schema.products.avgCost}, 0)) * ${schema.returnItems.quantity}) filter (where ${schema.returnRequests.approvedAt} < ${from.toISOString()}), 0)`,
-        })
-        .from(schema.returnItems)
-        .innerJoin(schema.returnRequests, eq(schema.returnItems.returnRequestId, schema.returnRequests.id))
-        .leftJoin(schema.salesInvoiceItems, eq(schema.returnItems.invoiceItemId, schema.salesInvoiceItems.id))
-        .leftJoin(schema.products, eq(schema.returnItems.productId, schema.products.id))
-        .where(
-          and(
-            eq(schema.returnRequests.kind, "SALE_RETURN"),
-            eq(schema.returnRequests.status, "APPROVED"),
-            gte(schema.returnRequests.approvedAt, prevFrom),
-            lte(schema.returnRequests.approvedAt, to)
-          )
-        ),
-      db
-        .select({
-          curTotal: sql<string>`coalesce(sum(${schema.expenses.amount}) filter (where ${schema.expenses.createdAt} >= ${from.toISOString()}), 0)`,
-          prevTotal: sql<string>`coalesce(sum(${schema.expenses.amount}) filter (where ${schema.expenses.createdAt} < ${from.toISOString()}), 0)`,
-        })
-        .from(schema.expenses)
-        .where(and(gte(schema.expenses.createdAt, prevFrom), lte(schema.expenses.createdAt, to))),
-      expensesByCategoryCmp(from, to, prevFrom),
-      db.select().from(schema.customers),
-      // نفس دالة "المستحق للموردين" المستخدمة في كل شاشة تانية في السيستم (الداشبورد، الوضع المالي،
-      // شاشة الموردين) - عشان الرقم هنا يفضل متطابق معاهم دايمًا (نفس درس batch سابق في finance.ts)
-      getTotalSuppliersPayable(),
-      db.select().from(schema.cashDrawers),
-      db
-        .select({
-          productId: schema.stocks.productId,
-          productName: schema.products.name,
-          quantity: schema.stocks.quantity,
-          avgCost: schema.products.avgCost,
-          reorderPoint: schema.products.reorderPoint,
-          active: schema.products.active,
-        })
-        .from(schema.stocks)
-        .innerJoin(schema.products, eq(schema.stocks.productId, schema.products.id)),
-      db
-        .select({ productId: schema.salesInvoiceItems.productId, qty: sql<number>`sum(${schema.salesInvoiceItems.quantity})` })
-        .from(schema.salesInvoiceItems)
-        .innerJoin(schema.salesInvoices, eq(schema.salesInvoiceItems.invoiceId, schema.salesInvoices.id))
-        .where(gte(schema.salesInvoices.createdAt, since60))
-        .groupBy(schema.salesInvoiceItems.productId),
-      db.select({ id: schema.returnRequests.id }).from(schema.returnRequests).where(eq(schema.returnRequests.status, "PENDING")),
-      db.select().from(schema.consignments).where(eq(schema.consignments.active, true)),
-    ]);
+    // ⚠️ رجعنا هنا لاستعلامات واحد ورا التاني (مش Promise.all) بعد عطل حقيقي حصل في الموقع كله يوم
+    // 10 سبتمبر بعد ما اتجربت نسخة Promise.all: فتح صفحة التحليلات كان بيبعت الـ12 استعلام دول مرة
+    // واحدة مع بعض، وده كان بياخد أكتر من عدد الاتصالات المتاحة فعليًا لقاعدة البيانات (خصوصًا إن
+    // الاتصال بيعدي على مجمّع Supabase - PgBouncer - مش قاعدة البيانات مباشرة، ومساحته أصغر من
+    // max:10 المحلي) فكان بيعلّق لحد ما Vercel يقفل الطلب بعد 300 ثانية (504) - نفس فئة عطل 8
+    // سبتمبر بالظبط بس بسبب صفحة مختلفة. عدد الاستعلامات المرسلة لسه ثابت زي ما هو (12) - الفرق إن
+    // كل استعلام بياخد اتصاله ويسيبه قبل ما اللي بعده يبدأ، بدل ما الـ12 يحجزوا اتصال في نفس اللحظة.
+    const [salesCmp] = await db
+      .select({
+        curTotal: sql<string>`coalesce(sum(${schema.salesInvoices.total}) filter (where ${schema.salesInvoices.createdAt} >= ${from.toISOString()}), 0)`,
+        curCount: sql<number>`count(*) filter (where ${schema.salesInvoices.createdAt} >= ${from.toISOString()})`,
+        prevTotal: sql<string>`coalesce(sum(${schema.salesInvoices.total}) filter (where ${schema.salesInvoices.createdAt} < ${from.toISOString()}), 0)`,
+        prevCount: sql<number>`count(*) filter (where ${schema.salesInvoices.createdAt} < ${from.toISOString()})`,
+      })
+      .from(schema.salesInvoices)
+      .where(and(gte(schema.salesInvoices.createdAt, prevFrom), lte(schema.salesInvoices.createdAt, to)));
+
+    const [profitCmp] = await db
+      .select({
+        curProfit: sql<string>`coalesce(sum((${schema.salesInvoiceItems.unitPrice} - ${schema.salesInvoiceItems.unitCost}) * ${schema.salesInvoiceItems.quantity}) filter (where ${schema.salesInvoices.createdAt} >= ${from.toISOString()}), 0)`,
+        prevProfit: sql<string>`coalesce(sum((${schema.salesInvoiceItems.unitPrice} - ${schema.salesInvoiceItems.unitCost}) * ${schema.salesInvoiceItems.quantity}) filter (where ${schema.salesInvoices.createdAt} < ${from.toISOString()}), 0)`,
+      })
+      .from(schema.salesInvoiceItems)
+      .innerJoin(schema.salesInvoices, eq(schema.salesInvoiceItems.invoiceId, schema.salesInvoices.id))
+      .where(and(gte(schema.salesInvoices.createdAt, prevFrom), lte(schema.salesInvoices.createdAt, to)));
+
+    const [returnProfitCmp] = await db
+      .select({
+        curProfit: sql<string>`coalesce(sum((${schema.returnItems.unitPrice} - coalesce(${schema.salesInvoiceItems.unitCost}, ${schema.products.avgCost}, 0)) * ${schema.returnItems.quantity}) filter (where ${schema.returnRequests.approvedAt} >= ${from.toISOString()}), 0)`,
+        prevProfit: sql<string>`coalesce(sum((${schema.returnItems.unitPrice} - coalesce(${schema.salesInvoiceItems.unitCost}, ${schema.products.avgCost}, 0)) * ${schema.returnItems.quantity}) filter (where ${schema.returnRequests.approvedAt} < ${from.toISOString()}), 0)`,
+      })
+      .from(schema.returnItems)
+      .innerJoin(schema.returnRequests, eq(schema.returnItems.returnRequestId, schema.returnRequests.id))
+      .leftJoin(schema.salesInvoiceItems, eq(schema.returnItems.invoiceItemId, schema.salesInvoiceItems.id))
+      .leftJoin(schema.products, eq(schema.returnItems.productId, schema.products.id))
+      .where(
+        and(
+          eq(schema.returnRequests.kind, "SALE_RETURN"),
+          eq(schema.returnRequests.status, "APPROVED"),
+          gte(schema.returnRequests.approvedAt, prevFrom),
+          lte(schema.returnRequests.approvedAt, to)
+        )
+      );
+
+    const [expenseCmp] = await db
+      .select({
+        curTotal: sql<string>`coalesce(sum(${schema.expenses.amount}) filter (where ${schema.expenses.createdAt} >= ${from.toISOString()}), 0)`,
+        prevTotal: sql<string>`coalesce(sum(${schema.expenses.amount}) filter (where ${schema.expenses.createdAt} < ${from.toISOString()}), 0)`,
+      })
+      .from(schema.expenses)
+      .where(and(gte(schema.expenses.createdAt, prevFrom), lte(schema.expenses.createdAt, to)));
+
+    const expenseCategories = await expensesByCategoryCmp(from, to, prevFrom);
+    const customers = await db.select().from(schema.customers);
+    // نفس دالة "المستحق للموردين" المستخدمة في كل شاشة تانية في السيستم (الداشبورد، الوضع المالي،
+    // شاشة الموردين) - عشان الرقم هنا يفضل متطابق معاهم دايمًا (نفس درس batch سابق في finance.ts)
+    const totalPayable = await getTotalSuppliersPayable();
+    const drawers = await db.select().from(schema.cashDrawers);
+    const stockRows = await db
+      .select({
+        productId: schema.stocks.productId,
+        productName: schema.products.name,
+        quantity: schema.stocks.quantity,
+        avgCost: schema.products.avgCost,
+        reorderPoint: schema.products.reorderPoint,
+        active: schema.products.active,
+      })
+      .from(schema.stocks)
+      .innerJoin(schema.products, eq(schema.stocks.productId, schema.products.id));
+    const soldRows60 = await db
+      .select({ productId: schema.salesInvoiceItems.productId, qty: sql<number>`sum(${schema.salesInvoiceItems.quantity})` })
+      .from(schema.salesInvoiceItems)
+      .innerJoin(schema.salesInvoices, eq(schema.salesInvoiceItems.invoiceId, schema.salesInvoices.id))
+      .where(gte(schema.salesInvoices.createdAt, since60))
+      .groupBy(schema.salesInvoiceItems.productId);
+    const pendingReturnsRows = await db
+      .select({ id: schema.returnRequests.id })
+      .from(schema.returnRequests)
+      .where(eq(schema.returnRequests.status, "PENDING"));
+    const consignmentsRows = await db.select().from(schema.consignments).where(eq(schema.consignments.active, true));
 
     const totalReceivable = customers.reduce((s, c) => s + Math.max(Number(c.balance), 0), 0);
     const overLimitCustomers = customers.filter((c) => Number(c.creditLimit) > 0 && Number(c.balance) > Number(c.creditLimit));
@@ -364,56 +356,59 @@ export async function getSalesAnalytics(periodKey: PeriodKey, customFrom?: strin
     // التجميع بيحصل في قاعدة البيانات (GROUP BY على تاريخ اليوم بتوقيت القاهرة - نفس تحويل المنطقة
     // الزمنية اللي بتعمله cairoDayKey بالظبط، بس في SQL) فالراجع بحد أقصى عدد أيام الفترة (365 يوم
     // بالكتير)، مش عدد الفواتير - ونفس مبدأ getManagementOverview: كل الاستعلامات دي مستقلة عن بعض
-    // فبتتجاب مع بعض بـ Promise.all بدل واحد ورا التاني.
+    // ⚠️ برضه واحد ورا التاني مش Promise.all - نفس سبب getManagementOverview فوق بالظبط (عطل 10
+    // سبتمبر: Promise.all على عدة استعلامات في نفس اللحظة كان بيعلّق الموقع لحد ما Vercel يقفله).
     const cairoDaySql = sql<string>`to_char((${schema.salesInvoices.createdAt} at time zone 'UTC' at time zone 'Africa/Cairo'), 'YYYY-MM-DD')`;
 
-    const [trendRows, byCategoryRows, byChannel, byPaymentRows, byLocationRows] = await Promise.all([
-      db
-        .select({ day: cairoDaySql, total: sql<string>`coalesce(sum(${schema.salesInvoices.total}), 0)` })
-        .from(schema.salesInvoices)
-        .where(and(gte(schema.salesInvoices.createdAt, from), lte(schema.salesInvoices.createdAt, to)))
-        .groupBy(cairoDaySql)
-        .orderBy(cairoDaySql),
-      db
-        .select({
-          categoryId: schema.categories.id,
-          categoryName: schema.categories.name,
-          revenue: sql<string>`coalesce(sum(${schema.salesInvoiceItems.unitPrice} * ${schema.salesInvoiceItems.quantity}), 0)`,
-          qty: sql<string>`coalesce(sum(${schema.salesInvoiceItems.quantity}), 0)`,
-        })
-        .from(schema.salesInvoiceItems)
-        .innerJoin(schema.salesInvoices, eq(schema.salesInvoiceItems.invoiceId, schema.salesInvoices.id))
-        .innerJoin(schema.products, eq(schema.salesInvoiceItems.productId, schema.products.id))
-        .leftJoin(schema.categories, eq(schema.products.categoryId, schema.categories.id))
-        .where(and(gte(schema.salesInvoices.createdAt, from), lte(schema.salesInvoices.createdAt, to)))
-        .groupBy(schema.categories.id, schema.categories.name)
-        .orderBy(desc(sql`coalesce(sum(${schema.salesInvoiceItems.unitPrice} * ${schema.salesInvoiceItems.quantity}), 0)`)),
-      revenueByChannel(from, to, prevFrom, prevTo),
-      db
-        .select({
-          methodId: schema.salesInvoices.paymentMethodId,
-          methodName: schema.paymentMethods.name,
-          total: sql<string>`coalesce(sum(${schema.salesInvoices.total}), 0)`,
-          count: sql<number>`count(*)`,
-        })
-        .from(schema.salesInvoices)
-        .leftJoin(schema.paymentMethods, eq(schema.salesInvoices.paymentMethodId, schema.paymentMethods.id))
-        .where(and(gte(schema.salesInvoices.createdAt, from), lte(schema.salesInvoices.createdAt, to)))
-        .groupBy(schema.salesInvoices.paymentMethodId, schema.paymentMethods.name)
-        .orderBy(desc(sql`coalesce(sum(${schema.salesInvoices.total}), 0)`)),
-      db
-        .select({
-          locationId: schema.salesInvoices.locationId,
-          locationName: schema.locations.name,
-          total: sql<string>`coalesce(sum(${schema.salesInvoices.total}), 0)`,
-          count: sql<number>`count(*)`,
-        })
-        .from(schema.salesInvoices)
-        .innerJoin(schema.locations, eq(schema.salesInvoices.locationId, schema.locations.id))
-        .where(and(gte(schema.salesInvoices.createdAt, from), lte(schema.salesInvoices.createdAt, to)))
-        .groupBy(schema.salesInvoices.locationId, schema.locations.name)
-        .orderBy(desc(sql`coalesce(sum(${schema.salesInvoices.total}), 0)`)),
-    ]);
+    const trendRows = await db
+      .select({ day: cairoDaySql, total: sql<string>`coalesce(sum(${schema.salesInvoices.total}), 0)` })
+      .from(schema.salesInvoices)
+      .where(and(gte(schema.salesInvoices.createdAt, from), lte(schema.salesInvoices.createdAt, to)))
+      .groupBy(cairoDaySql)
+      .orderBy(cairoDaySql);
+
+    const byCategoryRows = await db
+      .select({
+        categoryId: schema.categories.id,
+        categoryName: schema.categories.name,
+        revenue: sql<string>`coalesce(sum(${schema.salesInvoiceItems.unitPrice} * ${schema.salesInvoiceItems.quantity}), 0)`,
+        qty: sql<string>`coalesce(sum(${schema.salesInvoiceItems.quantity}), 0)`,
+      })
+      .from(schema.salesInvoiceItems)
+      .innerJoin(schema.salesInvoices, eq(schema.salesInvoiceItems.invoiceId, schema.salesInvoices.id))
+      .innerJoin(schema.products, eq(schema.salesInvoiceItems.productId, schema.products.id))
+      .leftJoin(schema.categories, eq(schema.products.categoryId, schema.categories.id))
+      .where(and(gte(schema.salesInvoices.createdAt, from), lte(schema.salesInvoices.createdAt, to)))
+      .groupBy(schema.categories.id, schema.categories.name)
+      .orderBy(desc(sql`coalesce(sum(${schema.salesInvoiceItems.unitPrice} * ${schema.salesInvoiceItems.quantity}), 0)`));
+
+    const byChannel = await revenueByChannel(from, to, prevFrom, prevTo);
+
+    const byPaymentRows = await db
+      .select({
+        methodId: schema.salesInvoices.paymentMethodId,
+        methodName: schema.paymentMethods.name,
+        total: sql<string>`coalesce(sum(${schema.salesInvoices.total}), 0)`,
+        count: sql<number>`count(*)`,
+      })
+      .from(schema.salesInvoices)
+      .leftJoin(schema.paymentMethods, eq(schema.salesInvoices.paymentMethodId, schema.paymentMethods.id))
+      .where(and(gte(schema.salesInvoices.createdAt, from), lte(schema.salesInvoices.createdAt, to)))
+      .groupBy(schema.salesInvoices.paymentMethodId, schema.paymentMethods.name)
+      .orderBy(desc(sql`coalesce(sum(${schema.salesInvoices.total}), 0)`));
+
+    const byLocationRows = await db
+      .select({
+        locationId: schema.salesInvoices.locationId,
+        locationName: schema.locations.name,
+        total: sql<string>`coalesce(sum(${schema.salesInvoices.total}), 0)`,
+        count: sql<number>`count(*)`,
+      })
+      .from(schema.salesInvoices)
+      .innerJoin(schema.locations, eq(schema.salesInvoices.locationId, schema.locations.id))
+      .where(and(gte(schema.salesInvoices.createdAt, from), lte(schema.salesInvoices.createdAt, to)))
+      .groupBy(schema.salesInvoices.locationId, schema.locations.name)
+      .orderBy(desc(sql`coalesce(sum(${schema.salesInvoices.total}), 0)`));
 
     const dailyTrend = trendRows.map((r) => ({ day: r.day, total: Number(r.total) }));
     const byCategory = byCategoryRows.map((r) => ({ categoryId: r.categoryId, categoryName: r.categoryName || "بدون فئة", revenue: Number(r.revenue), qty: Number(r.qty) }));
@@ -434,17 +429,18 @@ export async function getFinancialAnalytics(periodKey: PeriodKey, customFrom?: s
   try {
     const { from, to, prevFrom } = await period(periodKey, customFrom, customTo);
 
-    const [summary, byProduct, monthly, expenseCategories, cashRows] = await Promise.all([
-      getProfitSummary(from, to),
-      getProfitBreakdownByProduct(from, to),
-      getMonthlyPerformance(12),
-      expensesByCategoryCmp(from, to, prevFrom),
-      db
-        .select({ type: schema.cashTransactions.type, total: sql<string>`coalesce(sum(${schema.cashTransactions.amount}), 0)` })
-        .from(schema.cashTransactions)
-        .where(and(gte(schema.cashTransactions.createdAt, from), lte(schema.cashTransactions.createdAt, to)))
-        .groupBy(schema.cashTransactions.type),
-    ]);
+    // ⚠️ واحد ورا التاني مش Promise.all (نفس سبب الدالتين فوق) - وده هنا أهم لأن getMonthlyPerformance
+    // لوحدها بتفتح 4 اتصالات مع بعض جواها أصلًا (Promise.all داخلي من دفعة 11) - لو استعملنا
+    // Promise.all هنا كمان كانت هتتحط جنب الـ4 دول في نفس اللحظة زيادة على استعلامات تانية.
+    const summary = await getProfitSummary(from, to);
+    const byProduct = await getProfitBreakdownByProduct(from, to);
+    const monthly = await getMonthlyPerformance(12);
+    const expenseCategories = await expensesByCategoryCmp(from, to, prevFrom);
+    const cashRows = await db
+      .select({ type: schema.cashTransactions.type, total: sql<string>`coalesce(sum(${schema.cashTransactions.amount}), 0)` })
+      .from(schema.cashTransactions)
+      .where(and(gte(schema.cashTransactions.createdAt, from), lte(schema.cashTransactions.createdAt, to)))
+      .groupBy(schema.cashTransactions.type);
 
     // TRANSFER_IN/OUT مستبعدين من صافي التدفق - دول مجرد نقل بين خزنتين جوه نفس الشركة (بيلغوا
     // بعض حسابيًا)، مش فلوس حقيقية داخلة أو خارجة من الشركة. ADJUSTMENT معروضة لوحدها لأن اتجاهها
@@ -478,7 +474,8 @@ export async function getProductsAnalytics(periodKey: PeriodKey, customFrom?: st
   try {
     const { from, to } = await period(periodKey, customFrom, customTo);
 
-    const [topSellers, profitByProduct] = await Promise.all([bestSellers(from, to), getProfitBreakdownByProduct(from, to)]);
+    const topSellers = await bestSellers(from, to);
+    const profitByProduct = await getProfitBreakdownByProduct(from, to);
 
     const soldInPeriod = await db
       .select({ productId: schema.salesInvoiceItems.productId, qty: sql<number>`sum(${schema.salesInvoiceItems.quantity})` })
