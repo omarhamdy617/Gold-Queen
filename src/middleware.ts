@@ -17,7 +17,20 @@ function secretKey(): Uint8Array | null {
 // /api/cron/backup ليها حماية خاصة بيها (بيرمز CRON_SECRET) جوه الراوت نفسه - لو منعناها هنا هتترفض
 // بـ 401 قبل ما توصل حتى لحماية الـ CRON_SECRET، وده كان معناه إن النسخة الاحتياطية اليومية التلقائية
 // (اللي بيستدعيها Vercel Cron، مش متصفح فيه جلسة مستخدم) كانت فعليًا متوقفة تمامًا من غير ما حد يلاحظ.
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/orders/webhook", "/api/cron/backup"];
+//
+// /manifest.webmanifest و /icon.png و /apple-icon.png و /icons/* دول ملفات أيقونة/PWA عامة
+// (شعار الموقع اللي بيظهر لما تضيفه للشاشة الرئيسية على الموبايل) - لازم تتفتح من غير أي جلسة،
+// زي أي favicon تمامًا، وإلا المتصفح/الموبايل هيحاول يجيبها وهيتحول لصفحة تسجيل الدخول بدل الصورة.
+const PUBLIC_PATHS = [
+  "/login",
+  "/api/auth/login",
+  "/api/orders/webhook",
+  "/api/cron/backup",
+  "/manifest.webmanifest",
+  "/icon.png",
+  "/apple-icon.png",
+  "/icons",
+];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -57,5 +70,7 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|manifest.webmanifest|icons/).*)",
+  ],
 };
