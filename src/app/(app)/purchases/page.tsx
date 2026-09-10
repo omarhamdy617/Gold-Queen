@@ -6,12 +6,12 @@ import Link from "next/link";
 import PurchaseForm from "./PurchaseForm";
 
 export default async function PurchasesPage() {
-  const [purchases, suppliers, locations, paymentMethods] = await Promise.all([
-    listPurchases(),
-    listSuppliers(),
-    listLocations(),
-    listPaymentMethods(),
-  ]);
+  // رجّعنا الاستعلامات الأربعة دي تتبعت واحد ورا التاني بدل ما تتزاحم كلها في نفس اللحظة - نفس
+  // إصلاح صفحة الأوردرات (شوف التعليق هناك).
+  const purchases = await listPurchases();
+  const suppliers = await listSuppliers();
+  const locations = await listLocations();
+  const paymentMethods = await listPaymentMethods();
 
   return (
     <div className="space-y-6">

@@ -148,45 +148,47 @@ export async function getMonthlyPerformance(monthsBack = 12) {
     return -1;
   }
 
-  const [salesRows, itemRows, returnRows, expenseRows] = await Promise.all([
-    db
-      .select({ total: schema.salesInvoices.total, createdAt: schema.salesInvoices.createdAt })
-      .from(schema.salesInvoices)
-      .where(and(gte(schema.salesInvoices.createdAt, overallStart), lte(schema.salesInvoices.createdAt, overallEnd))),
-    db
-      .select({
-        createdAt: schema.salesInvoices.createdAt,
-        unitPrice: schema.salesInvoiceItems.unitPrice,
-        unitCost: schema.salesInvoiceItems.unitCost,
-        quantity: schema.salesInvoiceItems.quantity,
-      })
-      .from(schema.salesInvoiceItems)
-      .innerJoin(schema.salesInvoices, eq(schema.salesInvoiceItems.invoiceId, schema.salesInvoices.id))
-      .where(and(gte(schema.salesInvoices.createdAt, overallStart), lte(schema.salesInvoices.createdAt, overallEnd))),
-    db
-      .select({
-        approvedAt: schema.returnRequests.approvedAt,
-        unitPrice: schema.returnItems.unitPrice,
-        quantity: schema.returnItems.quantity,
-        unitCost: sql<string>`coalesce(${schema.salesInvoiceItems.unitCost}, ${schema.products.avgCost}, 0)`,
-      })
-      .from(schema.returnItems)
-      .innerJoin(schema.returnRequests, eq(schema.returnItems.returnRequestId, schema.returnRequests.id))
-      .leftJoin(schema.salesInvoiceItems, eq(schema.returnItems.invoiceItemId, schema.salesInvoiceItems.id))
-      .leftJoin(schema.products, eq(schema.returnItems.productId, schema.products.id))
-      .where(
-        and(
-          eq(schema.returnRequests.kind, "SALE_RETURN"),
-          eq(schema.returnRequests.status, "APPROVED"),
-          gte(schema.returnRequests.approvedAt, overallStart),
-          lte(schema.returnRequests.approvedAt, overallEnd)
-        )
-      ),
-    db
-      .select({ amount: schema.expenses.amount, createdAt: schema.expenses.createdAt })
-      .from(schema.expenses)
-      .where(and(gte(schema.expenses.createdAt, overallStart), lte(schema.expenses.createdAt, overallEnd))),
-  ]);
+  // الدالة دي بتتنادى من صفحة "الأرباح والأداء" وكمان من صفحة التحليلات - كانت لسه بتبعت
+  // الـ4 استعلامات دول مع بعض في نفس اللحظة رغم إصلاح 8 سبتمبر (اللي وقف بس الاستعلام لكل شهر لوحده،
+  // مش الاستعلامات الأربعة نفسها)، وده كان بيضيف لضغط الاتصالات في كل مرة الدالة دي بتتنادى. رجّعناها
+  // تتبعت واحد ورا التاني زي كل حتة تانية في السيستم.
+  const salesRows = await db
+    .select({ total: schema.salesInvoices.total, createdAt: schema.salesInvoices.createdAt })
+    .from(schema.salesInvoices)
+    .where(and(gte(schema.salesInvoices.createdAt, overallStart), lte(schema.salesInvoices.createdAt, overallEnd)));
+  const itemRows = await db
+    .select({
+      createdAt: schema.salesInvoices.createdAt,
+      unitPrice: schema.salesInvoiceItems.unitPrice,
+      unitCost: schema.salesInvoiceItems.unitCost,
+      quantity: schema.salesInvoiceItems.quantity,
+    })
+    .from(schema.salesInvoiceItems)
+    .innerJoin(schema.salesInvoices, eq(schema.salesInvoiceItems.invoiceId, schema.salesInvoices.id))
+    .where(and(gte(schema.salesInvoices.createdAt, overallStart), lte(schema.salesInvoices.createdAt, overallEnd)));
+  const returnRows = await db
+    .select({
+      approvedAt: schema.returnRequests.approvedAt,
+      unitPrice: schema.returnItems.unitPrice,
+      quantity: schema.returnItems.quantity,
+      unitCost: sql<string>`coalesce(${schema.salesInvoiceItems.unitCost}, ${schema.products.avgCost}, 0)`,
+    })
+    .from(schema.returnItems)
+    .innerJoin(schema.returnRequests, eq(schema.returnItems.returnRequestId, schema.returnRequests.id))
+    .leftJoin(schema.salesInvoiceItems, eq(schema.returnItems.invoiceItemId, schema.salesInvoiceItems.id))
+    .leftJoin(schema.products, eq(schema.returnItems.productId, schema.products.id))
+    .where(
+      and(
+        eq(schema.returnRequests.kind, "SALE_RETURN"),
+        eq(schema.returnRequests.status, "APPROVED"),
+        gte(schema.returnRequests.approvedAt, overallStart),
+        lte(schema.returnRequests.approvedAt, overallEnd)
+      )
+    );
+  const expenseRows = await db
+    .select({ amount: schema.expenses.amount, createdAt: schema.expenses.createdAt })
+    .from(schema.expenses)
+    .where(and(gte(schema.expenses.createdAt, overallStart), lte(schema.expenses.createdAt, overallEnd)));
 
   const salesTotals = new Array(monthsBack).fill(0);
   for (const r of salesRows) {

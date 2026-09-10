@@ -10,9 +10,15 @@ import ApproveControls from "./ApproveControls";
 import ReturnDetailToggle from "./ReturnDetailToggle";
 
 export default async function ReturnsPage() {
-  const [returns, products, customers, suppliers, locations, paymentMethods, reasons] = await Promise.all([
-    listReturns(), listProductsWithStock(), listCustomers(), listSuppliers(), listLocations(), listPaymentMethods(), getReturnReasons(),
-  ]);
+  // رجّعنا الاستعلامات السبعة دي تتبعت واحد ورا التاني بدل ما تتزاحم كلها في نفس اللحظة - نفس
+  // إصلاح صفحة الأوردرات (شوف التعليق هناك).
+  const returns = await listReturns();
+  const products = await listProductsWithStock();
+  const customers = await listCustomers();
+  const suppliers = await listSuppliers();
+  const locations = await listLocations();
+  const paymentMethods = await listPaymentMethods();
+  const reasons = await getReturnReasons();
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">المرتجعات (لازم اعتماد أدمن)</h1>

@@ -10,9 +10,13 @@ import ConsignmentLeaderboard from "./ConsignmentLeaderboard";
 const STALE_DAYS = 21;
 
 export default async function ConsignmentsPage() {
-  const [consignments, employees, locations, paymentMethods, oldestAges] = await Promise.all([
-    listConsignments(), listEmployees(), listLocations(), listPaymentMethods(), getOldestPendingItemAge(),
-  ]);
+  // رجّعنا الاستعلامات الخمسة دي تتبعت واحد ورا التاني بدل ما تتزاحم كلها في نفس اللحظة - نفس
+  // إصلاح صفحة الأوردرات (شوف التعليق هناك).
+  const consignments = await listConsignments();
+  const employees = await listEmployees();
+  const locations = await listLocations();
+  const paymentMethods = await listPaymentMethods();
+  const oldestAges = await getOldestPendingItemAge();
   return (
     <div className="space-y-6">
       <div>

@@ -34,18 +34,22 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const { status: rawStatus, q, page: rawPage } = await searchParams;
   const status = rawStatus && rawStatus !== "ALL" ? rawStatus : "ALL";
   const pageNum = Math.max(1, parseInt(rawPage || "1") || 1);
-  const [canShip, canConfirmPerm] = await Promise.all([can("orders.ship"), can("orders.confirm")]);
+  // صفحة الأوردرات دي كانت بتبعت 10 استعلامات لقاعدة البيانات مع بعض في نفس اللحظة (2 لفحص
+  // الصلاحيات + 8 لجيب البيانات) - ده بالظبط نفس نمط غلطة "الدفعة 17" اللي علّقت صفحة التحليلات،
+  // وكان السبب الفعلي وراء عطل الصفحة دي بالذات يوم 10 سبتمبر (لقطات سجلات Vercel أثبتت انتهاء
+  // مهلة الاتصال 60 ثانية على /orders في نفس وقت عطل التحليلات - كانت نفس المشكلة من يومها بس محدش
+  // كان لاحظها لأن التحليلات كانت أوضح عطل). رجّعناهم كلهم يتبعتوا واحد ورا التاني.
+  const canShip = await can("orders.ship");
+  const canConfirmPerm = await can("orders.confirm");
   const canConfirm = canShip || canConfirmPerm;
-  const [{ rows: orders, hasMore }, couriers, shippingCompanies, locations, stats, paymentMethods, activeOrderSources, allOrderSources] = await Promise.all([
-    listOrders(status, q, pageNum),
-    canShip ? listCouriers() : Promise.resolve([]),
-    canShip ? listShippingCompanies() : Promise.resolve([]),
-    listLocations(),
-    getOrderStats(),
-    listPaymentMethods(),
-    listOrderSources(),
-    listAllOrderSources(),
-  ]);
+  const { rows: orders, hasMore } = await listOrders(status, q, pageNum);
+  const couriers = canShip ? await listCouriers() : [];
+  const shippingCompanies = canShip ? await listShippingCompanies() : [];
+  const locations = await listLocations();
+  const stats = await getOrderStats();
+  const paymentMethods = await listPaymentMethods();
+  const activeOrderSources = await listOrderSources();
+  const allOrderSources = await listAllOrderSources();
   const canManageStatus = canShip || canConfirm;
   // مصادر الأوردر بقت جدول حقيقي قابل للتعديل من الإعدادات (بدل enum ثابت) - بنجيب كل المصادر
   // (حتى المعطّلة) مرة واحدة بس هنا وبنبني منها خريطة id->اسم لعرض الأوردرات القديمة صح حتى لو

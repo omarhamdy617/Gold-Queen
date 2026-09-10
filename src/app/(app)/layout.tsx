@@ -37,10 +37,12 @@ const SECTIONS: { title: string; hrefs: string[] }[] = [
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
   if (!session) redirect("/login");
-  const [perms, alerts] = await Promise.all([
-    getEffectivePermissions(session.userId),
-    getAlertsSummary(),
-  ]);
+  // اللايوت ده بيلف كل صفحة في السيستم - يعني الاستعلامين دول كانوا بيتبعتوا لقاعدة البيانات مع
+  // بعض في نفس اللحظة مع **كل** فتح لأي صفحة، لأي مستخدم (نفس غلطة "الدفعة 17" اللي علّقت
+  // التحليلات، بس هنا بتتكرر على كل صفحة في السيستم كله - ده سبب إحساس المستخدم إن العطل مش خاص
+  // بصفحة معينة). رجّعناهم يتبعتوا واحد ورا التاني.
+  const perms = await getEffectivePermissions(session.userId);
+  const alerts = await getAlertsSummary();
   const items = NAV_ITEMS.filter((i) => !i.perm || perms.has(i.perm));
   const itemsByHref = new Map(items.map((i) => [i.href, i]));
 

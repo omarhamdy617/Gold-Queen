@@ -23,17 +23,19 @@ const SHIP: Record<string, string> = { INTERNAL_COURIER: "مندوب داخلي"
 
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [data, canManage, isAdmin] = await Promise.all([getOrder(id), can("orders.manage"), isCallerAdmin()]);
+  // نفس مبدأ إصلاح صفحة قائمة الأوردرات - رجّعنا الاستعلامات تتبعت واحد ورا التاني بدل ما تتزاحم
+  // كلها مع بعض في نفس اللحظة (getOrder نفسها بتفتح كذا اتصال جوّاها كمان).
+  const data = await getOrder(id);
+  const canManage = await can("orders.manage");
+  const isAdmin = await isCallerAdmin();
   if (!data) return notFound();
   // اسم مصدر الأوردر (sourceName) بقى بييجي جاهز من getOrder نفسها - مصادر الأوردر بقت جدول
   // حقيقي قابل للتعديل من الإعدادات بدل قيم enum ثابتة (نفس أسلوب locationName بالظبط)
   const { order, items, locationName, sourceName, createdByName, assignedByName, deliveredByName, confirmedByName, cancelledByName } = data;
 
   const canEditDetails = canManage && !["DELIVERED", "RETURNED", "CANCELLED"].includes(order.status);
-  const [products, revertToStatus] = await Promise.all([
-    canEditDetails ? listProductsWithStock() : Promise.resolve([]),
-    isAdmin ? getRevertPreviewStatus(id) : Promise.resolve(null),
-  ]);
+  const products = canEditDetails ? await listProductsWithStock() : [];
+  const revertToStatus = isAdmin ? await getRevertPreviewStatus(id) : null;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">

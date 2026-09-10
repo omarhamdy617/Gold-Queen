@@ -7,12 +7,12 @@ import Link from "next/link";
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const { q } = await searchParams;
-  const [products, categories, locations, alerts] = await Promise.all([
-    listProductsWithStock(q),
-    listCategories(),
-    listLocations(),
-    getReorderAlerts(),
-  ]);
+  // رجّعنا الاستعلامات الأربعة دي تتبعت واحد ورا التاني بدل ما تتزاحم كلها في نفس اللحظة - نفس
+  // إصلاح صفحة الأوردرات (شوف التعليق هناك).
+  const products = await listProductsWithStock(q);
+  const categories = await listCategories();
+  const locations = await listLocations();
+  const alerts = await getReorderAlerts();
 
   return (
     <div className="space-y-6">

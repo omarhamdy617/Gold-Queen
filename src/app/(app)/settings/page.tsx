@@ -15,15 +15,15 @@ import OrderSourceList from "./OrderSourceList";
 import AddOrderSource from "./AddOrderSource";
 
 export default async function SettingsPage() {
-  const [settings, paymentMethods, locations, expenseCategories, couriers, shippingCompanies, orderSources] = await Promise.all([
-    getSettings(),
-    listPaymentMethods(),
-    listLocations(),
-    listExpenseCategories(),
-    listCouriers(),
-    listShippingCompanies(),
-    listAllOrderSources(),
-  ]);
+  // رجّعنا الاستعلامات السبعة دي تتبعت واحد ورا التاني بدل ما تتزاحم كلها في نفس اللحظة - نفس
+  // إصلاح صفحة الأوردرات (شوف التعليق هناك).
+  const settings = await getSettings();
+  const paymentMethods = await listPaymentMethods();
+  const locations = await listLocations();
+  const expenseCategories = await listExpenseCategories();
+  const couriers = await listCouriers();
+  const shippingCompanies = await listShippingCompanies();
+  const orderSources = await listAllOrderSources();
   return (
     <div className="space-y-6 max-w-2xl">
       <h1 className="text-xl font-bold">الإعدادات العامة</h1>

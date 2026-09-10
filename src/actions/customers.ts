@@ -155,8 +155,13 @@ export async function searchEverything(q: string) {
   // كان بيتأكد بس من وجود جلسة (requireSession) من غير أي تحقق صلاحية فعلي - أي مستخدم مسجل دخول
   // بغض النظر عن دوره كان يقدر يبحث ويشوف بيانات عملاء وفواتير حتى لو مالوش صلاحية "إدارة العملاء"
   // ولا "عرض الفواتير" أصلًا، من خلال شاشة البحث الشامل بس (تخطي كامل لنظام الصلاحيات).
-  const [canCustomers, canInvoices] = await Promise.all([canAny(["customers.manage", "customers.statement"]), can("sales.view")]);
+  // البحث ده بينادى من مربّع البحث الظاهر في كل صفحة في السيستم - فحص الصلاحيتين كان بيتبعت مع بعض
+  // في نفس اللحظة (وكل واحد منهم بيفتح لوحده حتى 3 اتصالات جوّاه)، وده بيتكرر مع كل استخدام للبحث.
+  // رجّعناهم يتبعتوا واحد ورا التاني، وبعد ما نتأكد إن فيه نص كفاية للبحث الأول (توفير فحص صلاحية
+  // من غير داعي لو الخانة فاضية أو حرف واحد بس).
   if (!q || q.length < 2) return { customers: [], invoices: [] };
+  const canCustomers = await canAny(["customers.manage", "customers.statement"]);
+  const canInvoices = await can("sales.view");
   const customers = canCustomers
     ? await db
         .select()
