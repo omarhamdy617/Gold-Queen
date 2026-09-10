@@ -1,6 +1,7 @@
 import { listOrders, listCouriers, listShippingCompanies, getOrderStats } from "@/actions/orders";
 import { listLocations } from "@/actions/products";
 import { listPaymentMethods } from "@/actions/cash";
+import { listOrderSources, listAllOrderSources } from "@/actions/orderSources";
 import { can } from "@/lib/auth";
 import { dateAr, money } from "@/lib/format";
 import { ORDER_STATUS_LABELS } from "@/lib/orderStatus";
@@ -35,15 +36,21 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const pageNum = Math.max(1, parseInt(rawPage || "1") || 1);
   const [canShip, canConfirmPerm] = await Promise.all([can("orders.ship"), can("orders.confirm")]);
   const canConfirm = canShip || canConfirmPerm;
-  const [{ rows: orders, hasMore }, couriers, shippingCompanies, locations, stats, paymentMethods] = await Promise.all([
+  const [{ rows: orders, hasMore }, couriers, shippingCompanies, locations, stats, paymentMethods, activeOrderSources, allOrderSources] = await Promise.all([
     listOrders(status, q, pageNum),
     canShip ? listCouriers() : Promise.resolve([]),
     canShip ? listShippingCompanies() : Promise.resolve([]),
     listLocations(),
     getOrderStats(),
     listPaymentMethods(),
+    listOrderSources(),
+    listAllOrderSources(),
   ]);
   const canManageStatus = canShip || canConfirm;
+  // مصادر الأوردر بقت جدول حقيقي قابل للتعديل من الإعدادات (بدل enum ثابت) - بنجيب كل المصادر
+  // (حتى المعطّلة) مرة واحدة بس هنا وبنبني منها خريطة id->اسم لعرض الأوردرات القديمة صح حتى لو
+  // مصدرها اتعطّل بعد كده، والمصادر المفعّلة بس بتتبعت لفورم "أوردر جديد"
+  const sourceMap: Record<string, string> = Object.fromEntries(allOrderSources.map((s: any) => [s.id, s.name]));
 
   const qsFor = (st: string, p: number = 1) => {
     const params = new URLSearchParams();
@@ -67,7 +74,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         <StatCard label="تحصيل معلّق" value={stats.pendingCollection} highlight />
       </div>
 
-      <OrderForm locations={locations} />
+      <OrderForm locations={locations} orderSources={activeOrderSources} />
 
       <OrderSearchBox initialQuery={q || ""} status={status} />
 
@@ -89,7 +96,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                 <td className="text-xs">{o.customerPhone}{o.customerPhone2 ? ` / ${o.customerPhone2}` : ""}</td>
                 <td className="text-xs max-w-[160px]">{o.address}{o.deliveryNotes ? <div className="text-muted">ملاحظات: {o.deliveryNotes}</div> : null}</td>
                 <td className="text-xs">{o.governorate}</td>
-                <td>{sourceLabel(o.source)}</td>
+                <td>{sourceMap[o.source] || o.source}</td>
                 <td className="text-xs">{o.shippingMethod ? `${shipLabel(o.shippingMethod)} - ${o.courierName || o.shippingCompanyName || ""}` : "-"}</td>
                 <td className="font-semibold">{money(o.total)}</td>
                 <td><StatusControl orderId={o.id} status={o.status} canEdit={canShip} canConfirm={canConfirm} paymentMethods={paymentMethods} confirmationAttempts={o.confirmationAttempts} orderCollectionStatus={o.collectionStatus} /></td>
@@ -146,5 +153,4 @@ function StatCard({ label, value, highlight, active }: { label: string; value: n
   );
 }
 
-function sourceLabel(s: string) { return { WEBSITE: "الموقع", PHONE: "تليفون", WHATSAPP: "واتساب", FACEBOOK: "فيسبوك", OTHER: "أخرى" }[s] || s; }
 function shipLabel(s: string) { return { INTERNAL_COURIER: "مندوب داخلي", EXTERNAL_COMPANY: "شركة شحن", OTHER: "أخرى" }[s] || s; }

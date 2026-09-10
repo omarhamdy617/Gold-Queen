@@ -1,11 +1,16 @@
 import { listInvoices } from "@/actions/sales";
+import { listAllOrderSources } from "@/actions/orderSources";
 import { money, dateAr } from "@/lib/format";
 import Link from "next/link";
 import InvoiceSearchBox from "./InvoiceSearchBox";
 
 export default async function SalesPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const { q } = await searchParams;
-  const invoices = await listInvoices(q);
+  const [invoices, orderSources] = await Promise.all([listInvoices(q), listAllOrderSources()]);
+  // مصادر الأوردر بقت جدول حقيقي قابل للتعديل من الإعدادات (بدل enum ثابت) - بنجيب كل المصادر
+  // (حتى المعطّلة) مرة واحدة بس هنا وبنبني منها خريطة id->اسم، عشان فاتورة قديمة مرتبطة بمصدر
+  // اتعطّل بعد كده تفضل عارضة اسمه صح بدل ما تعرض الـ id الخام
+  const sourceMap: Record<string, string> = Object.fromEntries(orderSources.map((s: any) => [s.id, s.name]));
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -34,7 +39,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
                 <td>{money(inv.total)}</td>
                 <td>{money(inv.paidAmount)}</td>
                 <td>{statusLabel(inv.paymentStatus)}</td>
-                <td>{sourceLabel(inv.source)}</td>
+                <td>{sourceMap[inv.source] || inv.source}</td>
                 <td>{dateAr(inv.createdAt)}</td>
               </tr>
             ))}
@@ -48,4 +53,3 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   );
 }
 function statusLabel(s: string) { return { PAID: "مدفوعة", UNPAID: "آجل", PARTIAL: "جزئي" }[s] || s; }
-function sourceLabel(s: string) { return { WEBSITE: "الموقع", PHONE: "تليفون", WHATSAPP: "واتساب", FACEBOOK: "فيسبوك", OTHER: "المحل" }[s] || s; }

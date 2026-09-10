@@ -9,7 +9,7 @@ import ProductSearchSelect from "@/components/ProductSearchSelect";
 
 type Line = { productId: string; quantity: string; unitPrice: string; serials: string };
 
-export default function NewInvoiceForm({ products, locations, customers: initialCustomers, paymentMethods }: any) {
+export default function NewInvoiceForm({ products, locations, customers: initialCustomers, paymentMethods, orderSources }: any) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [locationId, setLocationId] = useState(locations[0]?.id || "");
@@ -24,7 +24,10 @@ export default function NewInvoiceForm({ products, locations, customers: initial
   const [paymentStatus, setPaymentStatus] = useState<"PAID" | "UNPAID" | "PARTIAL">("PAID");
   const [paidAmount, setPaidAmount] = useState("");
   const [paymentMethodId, setPaymentMethodId] = useState(paymentMethods[0]?.id || "");
-  const [source, setSource] = useState("OTHER");
+  // الافتراضي زي قبل كده تمامًا (بيع من المحل نفسه، مش من مصدر خارجي) - دلوقتي مصادر الأوردر
+  // بقت جدول حقيقي قابل للتعديل من الإعدادات (شوف src/actions/orderSources.ts) بدل قيم enum
+  // ثابتة، فبندوّر على "أخرى" بالاسم بدل ما نفترض كود ثابت زي "OTHER"
+  const [source, setSource] = useState(orderSources.find((s: any) => s.name === "أخرى")?.id || orderSources[0]?.id || "");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
 
@@ -87,7 +90,7 @@ export default function NewInvoiceForm({ products, locations, customers: initial
           paymentStatus,
           paidAmount: paid,
           paymentMethodId: paid > 0 ? paymentMethodId : undefined,
-          source: source as any,
+          source,
           notes: notes.trim() || undefined,
         });
         if (isActionError(inv)) { setError(inv.error); return; }
@@ -115,11 +118,7 @@ export default function NewInvoiceForm({ products, locations, customers: initial
           <div>
             <label className="text-xs text-muted mb-1 block">مصدر البيع</label>
             <select value={source} onChange={(e) => setSource(e.target.value)} className="border rounded px-3 py-2 text-sm w-full">
-              <option value="OTHER">المحل</option>
-              <option value="WEBSITE">الموقع</option>
-              <option value="PHONE">تليفون</option>
-              <option value="WHATSAPP">واتساب</option>
-              <option value="FACEBOOK">فيسبوك</option>
+              {orderSources.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
         </div>

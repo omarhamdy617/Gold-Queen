@@ -21,7 +21,9 @@ type InvoiceInput = {
   paymentStatus: "PAID" | "UNPAID" | "PARTIAL";
   paidAmount: number;
   paymentMethodId?: string;
-  source: "WEBSITE" | "PHONE" | "WHATSAPP" | "FACEBOOK" | "OTHER";
+  // مصدر الأوردر بقى id لصف حقيقي في order_sources (مش قيمة enum ثابتة) - قابل للإضافة والتعديل
+  // من الإعدادات، فبقى نص عادي بدل union ثابت
+  source: string;
   notes?: string;
 };
 

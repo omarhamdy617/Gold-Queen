@@ -19,14 +19,15 @@ const COLORS: Record<string, string> = {
   RETURNED: "badge-red",
   CANCELLED: "badge-red",
 };
-const SOURCE: Record<string, string> = { WEBSITE: "الموقع", PHONE: "تليفون", WHATSAPP: "واتساب", FACEBOOK: "فيسبوك", OTHER: "أخرى" };
 const SHIP: Record<string, string> = { INTERNAL_COURIER: "مندوب داخلي", EXTERNAL_COMPANY: "شركة شحن", OTHER: "أخرى" };
 
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const [data, canManage, isAdmin] = await Promise.all([getOrder(id), can("orders.manage"), isCallerAdmin()]);
   if (!data) return notFound();
-  const { order, items, locationName, createdByName, assignedByName, deliveredByName, confirmedByName, cancelledByName } = data;
+  // اسم مصدر الأوردر (sourceName) بقى بييجي جاهز من getOrder نفسها - مصادر الأوردر بقت جدول
+  // حقيقي قابل للتعديل من الإعدادات بدل قيم enum ثابتة (نفس أسلوب locationName بالظبط)
+  const { order, items, locationName, sourceName, createdByName, assignedByName, deliveredByName, confirmedByName, cancelledByName } = data;
 
   const canEditDetails = canManage && !["DELIVERED", "RETURNED", "CANCELLED"].includes(order.status);
   const [products, revertToStatus] = await Promise.all([
@@ -60,7 +61,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           <div><span className="text-muted">الهاتف: </span>{order.customerPhone}{order.customerPhone2 ? ` / ${order.customerPhone2}` : ""}</div>
           <div><span className="text-muted">العنوان: </span>{order.address}</div>
           <div><span className="text-muted">المحافظة: </span>{order.governorate}</div>
-          <div><span className="text-muted">المصدر: </span>{SOURCE[order.source] || order.source}</div>
+          <div><span className="text-muted">المصدر: </span>{sourceName}</div>
           <div><span className="text-muted">مدفوع مقدمًا: </span>{order.prepaid ? "نعم" : "لا"}</div>
           <div><span className="text-muted">هيتجهز من: </span>{locationName || "-"}</div>
           <div><span className="text-muted">التاريخ: </span>{dateAr(order.createdAt)}</div>

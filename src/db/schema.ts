@@ -50,7 +50,8 @@ export const serialStatusEnum = pgEnum("serial_status", ["IN_STOCK", "SOLD", "RE
 export const purchasePaymentStatusEnum = pgEnum("purchase_payment_status", ["PAID", "UNPAID", "PARTIAL"]);
 export const customerTypeEnum = pgEnum("customer_type", ["RETAIL", "TRADER"]);
 export const invoicePaymentStatusEnum = pgEnum("invoice_payment_status", ["PAID", "UNPAID", "PARTIAL"]);
-export const orderSourceEnum = pgEnum("order_source", ["WEBSITE", "PHONE", "WHATSAPP", "FACEBOOK", "OTHER"]);
+// مصادر الأوردر بقت جدول حقيقي (orderSources تحت) بدل enum ثابت - عشان تقدر تضاف/تتعدل من
+// الإعدادات من غير ما تحتاج migration كل مرة (زي TikTok أو Instagram لو حبينا نضيفهم بعدين)
 export const shippingMethodEnum = pgEnum("shipping_method", ["INTERNAL_COURIER", "EXTERNAL_COMPANY", "OTHER"]);
 export const orderStatusEnum = pgEnum("order_status", ["PENDING", "CONFIRMED", "PREPARING", "SHIPPED", "DELIVERED", "RETURNED", "CANCELLED"]);
 export const orderAttemptResultEnum = pgEnum("order_attempt_result", ["NO_ANSWER", "WRONG_NUMBER", "POSTPONED", "OTHER"]);
@@ -422,6 +423,18 @@ export const consignmentItems = pgTable(
 );
 
 // --------------------------------------------------------------------------
+// ORDER SOURCES (مصادر الأوردر - قابلة للإضافة/التعديل من الإعدادات)
+// --------------------------------------------------------------------------
+// نفس أسلوب locations/paymentMethods بالظبط (id, name, active) - بدل ما تكون قيم enum ثابتة
+// مستخدمة في جدولين (sales_invoices, orders) ومحتاجة migration كل مرة حد يحب يضيف مصدر جديد.
+export const orderSources = pgTable("order_sources", {
+  id: cuid(),
+  name: varchar("name", { length: 100 }).notNull().unique(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// --------------------------------------------------------------------------
 // SALES INVOICES
 // --------------------------------------------------------------------------
 export const salesInvoices = pgTable("sales_invoices", {
@@ -443,7 +456,10 @@ export const salesInvoices = pgTable("sales_invoices", {
   paidAmount: money("paid_amount").notNull().default("0"),
   paymentStatus: invoicePaymentStatusEnum("payment_status").notNull().default("PAID"),
   paymentMethodId: text("payment_method_id").references(() => paymentMethods.id),
-  source: orderSourceEnum("source").notNull().default("OTHER"),
+  source: text("source")
+    .notNull()
+    .default("other")
+    .references(() => orderSources.id),
   notes: text("notes"),
   createdById: text("created_by_id")
     .notNull()
@@ -531,7 +547,10 @@ export const orders = pgTable("orders", {
   governorate: varchar("governorate", { length: 100 }),
   orderNotes: text("order_notes"),
   deliveryNotes: text("delivery_notes"),
-  source: orderSourceEnum("source").notNull().default("OTHER"),
+  source: text("source")
+    .notNull()
+    .default("other")
+    .references(() => orderSources.id),
   shippingMethod: shippingMethodEnum("shipping_method"),
   shippingCompanyId: text("shipping_company_id").references(() => shippingCompanies.id),
   shippingCompanyName: varchar("shipping_company_name", { length: 150 }),

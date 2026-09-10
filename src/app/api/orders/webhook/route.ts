@@ -82,7 +82,10 @@ export async function POST(req: NextRequest) {
         customerPhone: normalizedPhone || "",
         address: shippingAddress || undefined,
         governorate: governorate || undefined,
-        source: "WEBSITE",
+        // "website" بقى id لصف حقيقي في order_sources بدل قيمة enum ثابتة (نفس القيمة اللي
+        // اتزرعت بيها في migration 0008 - لو حد مسح مصدر "الموقع" من الإعدادات، الـ webhook ده
+        // هيبدأ يفشل بخطأ قيد foreign key لحد ما يتضاف تاني أو يتغيّر الكود هنا).
+        source: "website",
         // الأوردر بيدخل "في الانتظار" زي أي أوردر تاني - لازم يتأكد تليفونيًا الأول قبل ما يتحدد
         // مكانه ويتحجز مخزونه (نفس خط سير الأوردرات اليدوية بالظبط)
         status: "PENDING",
@@ -98,7 +101,7 @@ export async function POST(req: NextRequest) {
       await tx.insert(schema.orderItems).values({ orderId: order.id, productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice.toFixed(2) });
     }
 
-    await tx.insert(schema.auditLogs).values({ action: "CREATE", entityType: "Order", entityId: order.id, after: { source: "WEBSITE", code } });
+    await tx.insert(schema.auditLogs).values({ action: "CREATE", entityType: "Order", entityId: order.id, after: { source: "website", code } });
     return { order, code };
   });
 

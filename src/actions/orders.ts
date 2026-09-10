@@ -30,7 +30,9 @@ export async function createOrder(input: {
   items: { productId: string; quantity: number; unitPrice: number }[];
   discount?: number;
   shippingFee?: number;
-  source: "WEBSITE" | "PHONE" | "WHATSAPP" | "FACEBOOK" | "OTHER";
+  // مصدر الأوردر بقى id لصف حقيقي في order_sources (مش قيمة enum ثابتة) - قابل للإضافة والتعديل
+  // من الإعدادات، فبقى نص عادي بدل union ثابت
+  source: string;
   prepaid: boolean;
   locationId?: string;
 }) {
@@ -642,11 +644,13 @@ export async function getOrder(orderId: string) {
     const [loc] = await db.select().from(schema.locations).where(eq(schema.locations.id, order.locationId));
     locationName = loc?.name;
   }
+  const [sourceRow] = await db.select().from(schema.orderSources).where(eq(schema.orderSources.id, order.source));
 
   return {
     order,
     items,
     locationName,
+    sourceName: sourceRow?.name || order.source,
     createdByName: creator?.fullName,
     assignedByName: assigner?.fullName,
     deliveredByName: deliverer?.fullName,
@@ -697,7 +701,7 @@ export async function updateOrderDetails(orderId: string, input: {
   customerPhone2?: string;
   address: string;
   governorate: string;
-  source?: "WEBSITE" | "PHONE" | "WHATSAPP" | "FACEBOOK" | "OTHER";
+  source?: string;
   prepaid?: boolean;
   orderNotes?: string;
   deliveryNotes?: string;

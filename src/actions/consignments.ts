@@ -298,7 +298,7 @@ async function sellFromConsignmentInner(input: Parameters<typeof sellFromConsign
         paidAmount: total.toFixed(2),
         paymentStatus: "PAID",
         paymentMethodId: input.paymentMethodId,
-        source: "OTHER",
+        source: "other",
         notes: `بيع من عهدة الموظف`,
         createdById: session.userId,
         // البايع الفعلي هو صاحب العهدة - ده اللي بيتحسب عليه أداء المبيعات، مش اللي سجّل التسوية
@@ -426,7 +426,7 @@ async function settleConsignmentItemMixedInner(input: Parameters<typeof settleCo
           paidAmount: total.toFixed(2),
           paymentStatus: "PAID",
           paymentMethodId: sale.paymentMethodId,
-          source: "OTHER",
+          source: "other",
           notes: `بيع من عهدة الموظف`,
           createdById: session.userId,
           soldById: consignment.holderId,

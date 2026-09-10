@@ -14,7 +14,7 @@ import { money, dateAr } from "@/lib/format";
 // المنتجات والعملاء بقوا بيتجابوا بس لما الفورم ده يتفتح فعليًا (مش مع كل تحميل لصفحة الأوردرات
 // زي قبل كده) - ده كان أكبر سبب في بطء صفحة الأوردرات: كل مرة أي حد يغيّر حالة أوردر، الصفحة
 // كلها كانت بتتحدث وبتجيب كل المنتجات وكل العملاء تاني من غير داعي حتى لو الفورم ده مقفول أصلًا.
-export default function OrderForm({ locations }: any) {
+export default function OrderForm({ locations, orderSources }: any) {
   const [open, setOpen] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [dataError, setDataError] = useState("");
@@ -31,7 +31,10 @@ export default function OrderForm({ locations }: any) {
   const [customerPhone2, setCustomerPhone2] = useState("");
   const [address, setAddress] = useState("");
   const [governorate, setGovernorate] = useState("");
-  const [source, setSource] = useState("WEBSITE");
+  // الافتراضي زي قبل كده تمامًا (الموقع، أكتر مصدر شائع للأوردرات) - دلوقتي مصادر الأوردر بقت
+  // جدول حقيقي قابل للتعديل من الإعدادات (شوف src/actions/orderSources.ts) بدل قيم enum ثابتة،
+  // فبندوّر على "الموقع" بالاسم بدل ما نفترض كود ثابت زي "WEBSITE"
+  const [source, setSource] = useState(orderSources.find((s: any) => s.name === "الموقع")?.id || orderSources[0]?.id || "");
   const [orderNotes, setOrderNotes] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
   const [prepaid, setPrepaid] = useState(false);
@@ -98,7 +101,7 @@ export default function OrderForm({ locations }: any) {
           governorate: governorate.trim(),
           orderNotes: orderNotes.trim() || undefined,
           deliveryNotes: deliveryNotes.trim() || undefined,
-          source: source as any,
+          source,
           prepaid,
           items,
           discount: discount ? parseFloat(discount) : 0,
@@ -168,7 +171,7 @@ export default function OrderForm({ locations }: any) {
           <div>
             <label className="text-xs text-muted">مصدر الأوردر</label>
             <select value={source} onChange={(e) => setSource(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1">
-              <option value="WEBSITE">الموقع</option><option value="PHONE">تليفون</option><option value="WHATSAPP">واتساب</option><option value="FACEBOOK">فيسبوك</option><option value="OTHER">أخرى</option>
+              {orderSources.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <label className="flex items-center gap-2 text-sm mt-6"><input type="checkbox" checked={prepaid} onChange={(e) => setPrepaid(e.target.checked)} /> العميل دافع مقدمًا</label>

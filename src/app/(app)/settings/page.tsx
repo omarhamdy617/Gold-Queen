@@ -3,6 +3,7 @@ import { listPaymentMethods, createPaymentMethodWithDrawer } from "@/actions/cas
 import { listLocations, createLocation } from "@/actions/products";
 import { listExpenseCategories } from "@/actions/expenses";
 import { listCouriers, listShippingCompanies } from "@/actions/orders";
+import { listAllOrderSources } from "@/actions/orderSources";
 import SettingsForm from "./SettingsForm";
 import AddPaymentMethod from "./AddPaymentMethod";
 import AddLocation from "./AddLocation";
@@ -10,15 +11,18 @@ import LocationList from "./LocationList";
 import BackupButton from "./BackupButton";
 import ExpenseCategoryManager from "./ExpenseCategoryManager";
 import ShippingManager from "./ShippingManager";
+import OrderSourceList from "./OrderSourceList";
+import AddOrderSource from "./AddOrderSource";
 
 export default async function SettingsPage() {
-  const [settings, paymentMethods, locations, expenseCategories, couriers, shippingCompanies] = await Promise.all([
+  const [settings, paymentMethods, locations, expenseCategories, couriers, shippingCompanies, orderSources] = await Promise.all([
     getSettings(),
     listPaymentMethods(),
     listLocations(),
     listExpenseCategories(),
     listCouriers(),
     listShippingCompanies(),
+    listAllOrderSources(),
   ]);
   return (
     <div className="space-y-6 max-w-2xl">
@@ -42,6 +46,13 @@ export default async function SettingsPage() {
       <ExpenseCategoryManager categories={expenseCategories} />
 
       <ShippingManager couriers={couriers} shippingCompanies={shippingCompanies} />
+
+      <div className="app-card p-4 space-y-3">
+        <h2 className="font-bold">مصادر الأوردر</h2>
+        <p className="text-xs text-muted">المصادر دي بتظهر في القايمة المنسدلة وقت تسجيل فاتورة بيع أو أوردر جديد، وفي عمود "المصدر" في شاشتي الفواتير والأوردرات - عشان تعرف أكتر مبيعاتك جايالك منين.</p>
+        <OrderSourceList sources={orderSources} />
+        <AddOrderSource />
+      </div>
 
       <div className="app-card p-4 space-y-3">
         <h2 className="font-bold">النسخ الاحتياطي</h2>

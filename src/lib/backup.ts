@@ -17,6 +17,7 @@ export async function buildFullBackup() {
     cashDrawers: schema.cashDrawers,
     cashTransactions: schema.cashTransactions,
     locations: schema.locations,
+    orderSources: schema.orderSources,
     categories: schema.categories,
     products: schema.products,
     stocks: schema.stocks,
