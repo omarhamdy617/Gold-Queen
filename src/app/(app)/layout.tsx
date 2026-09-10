@@ -30,7 +30,7 @@ const SECTIONS: { title: string; hrefs: string[] }[] = [
   { title: "المبيعات", hrefs: ["/sales/new", "/sales", "/quotes"] },
   { title: "المخزون", hrefs: ["/products", "/products/barcode", "/purchases", "/suppliers", "/transfers"] },
   { title: "العملاء والأوردرات", hrefs: ["/customers", "/consignments", "/orders", "/returns"] },
-  { title: "الحسابات", hrefs: ["/cash", "/loans", "/expenses", "/finance", "/profit", "/reports"] },
+  { title: "الحسابات", hrefs: ["/cash", "/loans", "/expenses", "/finance", "/profit", "/reports", "/analytics"] },
   { title: "الإدارة", hrefs: ["/audit", "/settings/users", "/settings"] },
 ];
 

@@ -39,3 +39,31 @@ export function cairoStartOfMonth(d = new Date()): Date {
   const localStart = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1, 0, 0, 0));
   return new Date(localStart.getTime() - offsetMin * 60000);
 }
+
+// بداية الأسبوع بتوقيت القاهرة - الأسبوع هنا بيبدأ يوم السبت (عطلة الجمعة/السبت في مصر، فأول يوم
+// شغل فعلي في الأسبوع هو السبت) - مش الأحد زي التقويم الغربي الافتراضي في JS (getUTCDay()==0)
+export function cairoStartOfWeek(d = new Date()): Date {
+  const offsetMin = cairoOffsetMinutes(d);
+  const local = new Date(d.getTime() + offsetMin * 60000);
+  const day = local.getUTCDay(); // 0=الأحد .. 6=السبت
+  const daysSinceSaturday = (day + 1) % 7; // السبت(6)->0, الأحد(0)->1, ... الجمعة(5)->6
+  const localStart = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() - daysSinceSaturday, 0, 0, 0));
+  return new Date(localStart.getTime() - offsetMin * 60000);
+}
+
+// بداية الربع (3 شهور) بتوقيت القاهرة - يناير/إبريل/يوليو/أكتوبر
+export function cairoStartOfQuarter(d = new Date()): Date {
+  const offsetMin = cairoOffsetMinutes(d);
+  const local = new Date(d.getTime() + offsetMin * 60000);
+  const quarterStartMonth = Math.floor(local.getUTCMonth() / 3) * 3;
+  const localStart = new Date(Date.UTC(local.getUTCFullYear(), quarterStartMonth, 1, 0, 0, 0));
+  return new Date(localStart.getTime() - offsetMin * 60000);
+}
+
+// بداية السنة بتوقيت القاهرة
+export function cairoStartOfYear(d = new Date()): Date {
+  const offsetMin = cairoOffsetMinutes(d);
+  const local = new Date(d.getTime() + offsetMin * 60000);
+  const localStart = new Date(Date.UTC(local.getUTCFullYear(), 0, 1, 0, 0, 0));
+  return new Date(localStart.getTime() - offsetMin * 60000);
+}
