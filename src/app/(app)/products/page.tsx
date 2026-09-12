@@ -4,6 +4,7 @@ import { money, num } from "@/lib/format";
 import ProductForm from "./ProductForm";
 import EditProductButton from "./EditProductButton";
 import Link from "next/link";
+import { can } from "@/lib/auth";
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const { q } = await searchParams;
@@ -13,6 +14,9 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const categories = await listCategories();
   const locations = await listLocations();
   const alerts = await getReorderAlerts();
+  // "متوسط التكلفة" رقم حساس (بيوضح هامش الربح) - مش كل حد عنده صلاحية "عرض المنتجات" العادية
+  // المفروض يشوفه بالضرورة (زي موظف الشحن أو الكاشير). افتراضيًا الأدمن والمحاسب بس عندهم الصلاحية دي.
+  const canSeeCost = await can("inventory.cost.view");
 
   return (
     <div className="space-y-6">
@@ -70,7 +74,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
               <th>الباركود</th>
               <th>سعر الجملة</th>
               <th>سعر التجزئة</th>
-              <th>متوسط التكلفة</th>
+              {canSeeCost && <th>متوسط التكلفة</th>}
               {locations.map((l) => (
                 <th key={l.id}>{l.name}</th>
               ))}
@@ -95,13 +99,22 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                 <td className="font-mono text-xs">{p.barcode}</td>
                 <td>{money(p.wholesalePrice)}</td>
                 <td>{money(p.retailPrice)}</td>
-                <td>{money(p.avgCost)}</td>
+                {canSeeCost && <td>{money(p.avgCost)}</td>}
                 {locations.map((l) => (
                   <td key={l.id}>{num(p.stockByLocation[l.id] || 0)}</td>
                 ))}
                 <td className="font-bold">{num(p.totalStock)}</td>
                 <td>{num(p.reorderPoint)}</td>
-                <td><EditProductButton product={p} categories={categories} /></td>
+                <td>
+                  <EditProductButton
+                    // لو المستخدم مش عنده صلاحية شوف التكلفة، بنشيل avgCost من الأوبچكت نفسه قبل ما
+                    // نبعته لـ EditProductButton - ده Client Component، فأي قيمة موجودة في الـ prop
+                    // بتتبعت للمتصفح جوه استجابة الصفحة سواء استخدمناها في الفورم أو لأ، حتى لو
+                    // العمود نفسه في الجدول مش ظاهر. الفورم أصلًا مش بيستخدم avgCost في أي حقل.
+                    product={canSeeCost ? p : (({ avgCost, ...rest }) => rest)(p)}
+                    categories={categories}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>

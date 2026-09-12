@@ -1,12 +1,16 @@
 import { listLocations, getInventoryByLocation } from "@/actions/products";
 import { money, num } from "@/lib/format";
 import Link from "next/link";
+import { can } from "@/lib/auth";
 
 export default async function InventoryByLocationPage({ searchParams }: { searchParams: Promise<{ locationId?: string }> }) {
   const { locationId } = await searchParams;
   const locations = await listLocations();
   const activeId = locationId || locations[0]?.id;
   const data = activeId ? await getInventoryByLocation(activeId) : null;
+  // "قيمة المخزون بسعر التكلفة" و"متوسط التكلفة" أرقام حساسة (بتوضح هامش الربح) - نفس صلاحية بطاقة
+  // الداشبورد وعمود المنتجات. افتراضيًا الأدمن والمحاسب بس.
+  const canSeeCost = await can("inventory.cost.view");
 
   return (
     <div className="space-y-6">
@@ -29,22 +33,25 @@ export default async function InventoryByLocationPage({ searchParams }: { search
 
       {data && (
         <>
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className={`grid gap-4 ${canSeeCost ? "sm:grid-cols-2" : "sm:grid-cols-1"}`}>
             <div className="app-card p-4">
               <div className="text-xs text-muted">إجمالي عدد القطع في المكان ده</div>
               <div className="text-2xl font-bold">{num(data.totalQuantity)}</div>
             </div>
-            <div className="app-card p-4">
-              <div className="text-xs text-muted">قيمة المخزون (بسعر التكلفة)</div>
-              <div className="text-2xl font-bold">{money(data.totalValue)}</div>
-            </div>
+            {canSeeCost && (
+              <div className="app-card p-4">
+                <div className="text-xs text-muted">قيمة المخزون (بسعر التكلفة)</div>
+                <div className="text-2xl font-bold">{money(data.totalValue)}</div>
+              </div>
+            )}
           </div>
 
           <div className="app-card overflow-x-auto">
             <table className="w-full text-sm text-right">
               <thead>
                 <tr className="border-b text-muted">
-                  <th className="p-3">المنتج</th><th>الباركود</th><th>الكمية</th><th>متوسط التكلفة</th><th>قيمة المخزون</th>
+                  <th className="p-3">المنتج</th><th>الباركود</th><th>الكمية</th>
+                  {canSeeCost && (<><th>متوسط التكلفة</th><th>قيمة المخزون</th></>)}
                 </tr>
               </thead>
               <tbody>
@@ -53,12 +60,16 @@ export default async function InventoryByLocationPage({ searchParams }: { search
                     <td className="p-3">{r.productName}</td>
                     <td className="font-mono text-xs">{r.barcode}</td>
                     <td>{num(r.quantity)}</td>
-                    <td>{money(r.avgCost)}</td>
-                    <td className="font-bold">{money(r.costValue)}</td>
+                    {canSeeCost && (
+                      <>
+                        <td>{money(r.avgCost)}</td>
+                        <td className="font-bold">{money(r.costValue)}</td>
+                      </>
+                    )}
                   </tr>
                 ))}
                 {data.rows.length === 0 && (
-                  <tr><td colSpan={5} className="py-6 text-center text-muted">مفيش أي مخزون في المكان ده</td></tr>
+                  <tr><td colSpan={canSeeCost ? 5 : 3} className="py-6 text-center text-muted">مفيش أي مخزون في المكان ده</td></tr>
                 )}
               </tbody>
             </table>

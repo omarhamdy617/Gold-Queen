@@ -2,9 +2,13 @@ import { getDashboardData } from "@/actions/dashboard";
 import { money, num } from "@/lib/format";
 import Link from "next/link";
 import AlertsBanner from "@/components/AlertsBanner";
+import { can } from "@/lib/auth";
 
 export default async function DashboardPage() {
   const d = await getDashboardData();
+  // بطاقة "قيمة المخزون" بتوضح تكلفة كل البضاعة عندك مجمّعة - رقم حساس بيوضح غير مباشر هامش
+  // الربح، مش كل الموظفين محتاج يشوفه (زي موظف الشحن أو الكاشير). افتراضيًا الأدمن والمحاسب بس.
+  const canSeeCost = await can("inventory.cost.view");
   const today = new Date().toISOString().slice(0, 10);
   const bannerAlerts = [
     d.largeInvoices.length > 0
@@ -45,7 +49,7 @@ export default async function DashboardPage() {
         <Card label="إجمالي الكاش" value={money(d.totalCash)} icon="💰" accent="gold" />
         <Card label="مستحق لي" value={money(d.totalReceivable)} icon="⬅️" accent="primary" />
         <Card label="مستحق عليّ" value={money(d.totalPayable)} icon="➡️" accent="rose" />
-        <Card label="قيمة المخزون" value={money(d.inventoryValue)} icon="📦" accent="slate" />
+        {canSeeCost && <Card label="قيمة المخزون" value={money(d.inventoryValue)} icon="📦" accent="slate" />}
       </div>
 
       <div className="app-card p-5">

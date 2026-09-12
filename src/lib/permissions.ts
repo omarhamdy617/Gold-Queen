@@ -31,6 +31,11 @@ export const PERMISSION_GROUPS: { group: string; perms: { key: string; label: st
       { key: "products.manage", label: "إضافة/تعديل المنتجات" },
       { key: "products.barcode.print", label: "طباعة الباركود" },
       { key: "inventory.view", label: "عرض تقارير المخزون" },
+      // صلاحية مستقلة عن "عرض المنتجات"/"عرض تقارير المخزون" - عشان موظف ممكن يحتاج يشوف المنتج
+      // والكمية المتاحة (يبيع، يستلم بضاعة، يشحن) من غير ما يعرف بالضرورة تكلفة الشراء أو إجمالي
+      // قيمة المخزون كله (أرقام حساسة بتوضح هامش الربح). افتراضيًا الأدمن والمحاسب بس عندهم الصلاحية
+      // دي - وتقدر تضيفها لأي موظف تاني من شاشة "المستخدمون والصلاحيات" لو حابب.
+      { key: "inventory.cost.view", label: "معرفة تكلفة المنتجات وإجمالي قيمة المخزون" },
     ],
   },
   {
@@ -113,6 +118,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "cash.transfer",
     "products.view",
     "inventory.view",
+    "inventory.cost.view",
     "purchases.view",
     "sales.view",
     "customers.manage",
