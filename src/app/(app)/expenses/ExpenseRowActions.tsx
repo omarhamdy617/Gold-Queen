@@ -58,7 +58,10 @@ export default function ExpenseRowActions({ expense, categories, paymentMethods 
     <div className="flex items-center gap-2">
       <button onClick={() => setOpen(true)} className="text-xs text-primary">تعديل</button>
       <button
+        disabled={pending}
         onClick={() => {
+          // زرار "حذف" ده مكنش متقفل وقت التحميل (على عكس زرار "حفظ" التعديل فوق اللي عنده disabled={pending}) -
+          // فلو دوس عليه أكتر من مرة قبل ما أول طلب يخلص، كان بيبعت أكتر من طلب حذف لنفس المصروف مرة واحدة.
           if (!confirm("هتمسح المصروف ده؟ هيترجع المبلغ للخزينة تلقائيًا.")) return;
           start(async () => {
             const r = await deleteExpense(expense.id);
@@ -66,7 +69,7 @@ export default function ExpenseRowActions({ expense, categories, paymentMethods 
             router.refresh();
           });
         }}
-        className="text-xs text-red-600"
+        className="text-xs text-red-600 disabled:opacity-50"
       >
         حذف
       </button>

@@ -23,7 +23,11 @@ export default function ShippingManager({ couriers, shippingCompanies }: { couri
             <li key={c.id} className="flex items-center justify-between">
               <span>• {c.name} {c.phone && <span className="text-muted">({c.phone})</span>}</span>
               <button
+                disabled={pending}
                 onClick={() =>
+                  // زرار "إيقاف" ده مكنش متقفل وقت التحميل (على عكس زرار "إضافة" تحت اللي عنده
+                  // disabled={pending}) - فلو دوس عليه أكتر من مرة قبل ما أول طلب يخلص، كان بيبعت
+                  // أكتر من طلب إيقاف لنفس المندوب مرة واحدة.
                   start(async () => {
                     try {
                       await deactivateCourier(c.id);
@@ -33,7 +37,7 @@ export default function ShippingManager({ couriers, shippingCompanies }: { couri
                     }
                   })
                 }
-                className="text-xs text-red-500"
+                className="text-xs text-red-500 disabled:opacity-50"
               >
                 إيقاف
               </button>
@@ -72,7 +76,9 @@ export default function ShippingManager({ couriers, shippingCompanies }: { couri
             <li key={c.id} className="flex items-center justify-between">
               <span>• {c.name} {c.phone && <span className="text-muted">({c.phone})</span>}</span>
               <button
+                disabled={pending}
                 onClick={() =>
+                  // نفس الحكاية: زرار "إيقاف" ده مكنش متقفل وقت التحميل - دلوقتي بيتقفل من أول دوسة.
                   start(async () => {
                     try {
                       await deactivateShippingCompany(c.id);
@@ -82,7 +88,7 @@ export default function ShippingManager({ couriers, shippingCompanies }: { couri
                     }
                   })
                 }
-                className="text-xs text-red-500"
+                className="text-xs text-red-500 disabled:opacity-50"
               >
                 إيقاف
               </button>

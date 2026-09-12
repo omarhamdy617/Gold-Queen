@@ -121,16 +121,21 @@ export default function PurchaseForm({ suppliers, locations, paymentMethods }: a
           <input placeholder="أو مورد جديد" value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} className="border rounded px-3 py-2 text-sm flex-1" />
           <button
             type="button"
+            disabled={pending}
             onClick={() =>
+              // زرار "إضافة" ده مكنش متقفل وقت التحميل (على عكس زرار "حفظ الشراء" تحت اللي عنده
+              // disabled={pending}) - فلو النظام كان بطيء واتدوس أكتر من مرة قبل ما أول طلب يخلص،
+              // كل دوسة كانت بتسجل مورد جديد منفصل بنفس الاسم. دلوقتي الزرار بيتقفل من أول دوسة لحد
+              // ما الطلب يخلص، بالظبط زي زرار الحفظ الرئيسي.
               start(async () => {
-                if (!newSupplierName) return;
+                if (!newSupplierName || pending) return;
                 const s = await createSupplier({ name: newSupplierName });
                 setSupplierId(s.id);
                 setNewSupplierName("");
                 router.refresh();
               })
             }
-            className="bg-navy text-white rounded px-3 text-sm"
+            className="bg-navy text-white rounded px-3 text-sm disabled:opacity-50"
           >
             إضافة
           </button>

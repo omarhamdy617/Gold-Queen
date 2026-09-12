@@ -105,9 +105,13 @@ export default function ProductForm({ categories }: { categories: any[] }) {
           <input placeholder="أو تصنيف جديد" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} className="border rounded px-2 py-2 text-sm flex-1" />
           <button
             type="button"
+            disabled={pending}
             onClick={() =>
+              // زرار "إضافة" ده مكنش متقفل وقت التحميل (على عكس زرار "حفظ" الرئيسي تحت اللي عنده
+              // disabled={pending}) - فلو النظام كان بطيء ودوست أكتر من مرة قبل ما أول طلب يخلص، كل
+              // دوسة كانت بتسجل تصنيف جديد منفصل بنفس الاسم. دلوقتي الزرار بيتقفل من أول دوسة.
               start(async () => {
-                if (!newCategoryName.trim()) return;
+                if (!newCategoryName.trim() || pending) return;
                 try {
                   const cat = await createCategory({ name: newCategoryName.trim(), requiresSerial: false });
                   if (isActionError(cat)) { setError(cat.error); return; }
@@ -119,7 +123,7 @@ export default function ProductForm({ categories }: { categories: any[] }) {
                 }
               })
             }
-            className="bg-navy text-white rounded px-3 text-sm"
+            className="bg-navy text-white rounded px-3 text-sm disabled:opacity-50"
           >
             إضافة
           </button>

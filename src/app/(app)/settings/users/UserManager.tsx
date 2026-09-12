@@ -88,7 +88,9 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
               className="flex gap-2 pt-2 border-t"
             >
               <input placeholder="اسم دور/مسمى وظيفي جديد" value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)} className="border rounded px-3 py-2 text-sm flex-1" />
-              <button className="bg-navy text-white rounded-lg px-4 py-2 text-sm">+ إضافة مسمى جديد</button>
+              {/* زرار "+ إضافة مسمى جديد" ده مكنش متقفل وقت التحميل - نفس عيب "إضافة مورد" بالظبط:
+                  دوسة سريعة أكتر من مرة قبل ما أول طلب يخلص كانت ممكن تسجل نفس الدور أكتر من مرة. */}
+              <button disabled={pending} className="bg-navy text-white rounded-lg px-4 py-2 text-sm disabled:opacity-50">+ إضافة مسمى جديد</button>
               {roleAddError && <span className="text-red-600 text-xs self-center">{roleAddError}</span>}
             </form>
           </div>
@@ -106,7 +108,7 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
                   <td>{u.fullName}</td>
                   <td><span className="badge badge-blue">{roleLabel(u.roleName)}</span></td>
                   <td>
-                    <button onClick={() => start(async () => { const r = await toggleUserActive(u.id, !u.active); if (isActionError(r)) { alert(r.error); return; } router.refresh(); })} className={`text-xs rounded px-2 py-1 ${u.active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                    <button disabled={pending} onClick={() => start(async () => { const r = await toggleUserActive(u.id, !u.active); if (isActionError(r)) { alert(r.error); return; } router.refresh(); })} className={`text-xs rounded px-2 py-1 disabled:opacity-50 ${u.active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                       {u.active ? "نشط" : "موقوف"}
                     </button>
                   </td>
@@ -126,7 +128,7 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
                       {editingUser === u.id ? "إخفاء الصلاحيات" : "الصلاحيات التفصيلية"}
                     </button>
                     <button onClick={() => { setPwUser(pwUser === u.id ? null : u.id); setPwError(""); }} className="text-xs text-blue-600">كلمة المرور</button>
-                    <button onClick={() => { if (confirm("مسح المستخدم؟")) start(async () => { const r = await deleteUser(u.id); if (isActionError(r)) { alert(r.error); return; } router.refresh(); }); }} className="text-xs text-red-600">حذف</button>
+                    <button disabled={pending} onClick={() => { if (confirm("مسح المستخدم؟")) start(async () => { const r = await deleteUser(u.id); if (isActionError(r)) { alert(r.error); return; } router.refresh(); }); }} className="text-xs text-red-600 disabled:opacity-50">حذف</button>
                   </td>
                 </tr>
                 {infoUser === u.id && (
@@ -139,6 +141,7 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
                           {roles.map((r) => <option key={r.id} value={r.id}>{roleLabel(r.name)}</option>)}
                         </select>
                         <button
+                          disabled={pending}
                           onClick={() =>
                             start(async () => {
                               setInfoError("");
@@ -152,7 +155,7 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
                               }
                             })
                           }
-                          className="bg-primary text-white text-xs rounded px-3 py-1.5"
+                          className="bg-primary text-white text-xs rounded px-3 py-1.5 disabled:opacity-50"
                         >
                           حفظ
                         </button>
@@ -167,6 +170,7 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
                       <div className="flex gap-2 items-center">
                         <input type="password" placeholder="كلمة المرور الجديدة" value={newPw} onChange={(e) => setNewPw(e.target.value)} className="border rounded px-3 py-1.5 text-sm" />
                         <button
+                          disabled={pending}
                           onClick={() =>
                             start(async () => {
                               if (!newPw) return;
@@ -179,7 +183,7 @@ export default function UserManager({ users, roles }: { users: any[]; roles: any
                               setPwUser(null);
                             })
                           }
-                          className="bg-primary text-white text-xs rounded px-3 py-1.5"
+                          className="bg-primary text-white text-xs rounded px-3 py-1.5 disabled:opacity-50"
                         >
                           حفظ
                         </button>
