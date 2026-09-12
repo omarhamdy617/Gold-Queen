@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
@@ -82,7 +83,15 @@ export async function requireSession(): Promise<SessionPayload> {
 // مهم: بنجيب دور المستخدم وحالة نشاطه *من قاعدة البيانات فريش* هنا بدل ما نثق في القيم المخزّنة
 // جوه الجلسة (JWT) نفسها. الجلسة ممكن تفضل شغالة لحد 30 يوم، فلو حد نزّل موظف من أدمن لدور تاني،
 // أو أوقف حسابه خالص، لازم الحماية تتطبق من أول طلب جديد ليه - مش تفضل تثق في بيانات الدخول القديمة.
-export async function getEffectivePermissions(userId: string): Promise<Set<string>> {
+//
+// ملحوظة أداء: الدالة دي كانت بتتنفذ من الصفر (استعلام أو تلاتة لقاعدة البيانات) في كل مرة تتنادى،
+// حتى لو اتنادت أكتر من مرة في نفس التحميل لنفس الصفحة - زي صفحة المشتريات اللي بتحمّل 5 أقسام
+// مختلفة مع بعض (Promise.all)، كل قسم منهم بيتحقق من صلاحياتك بشكل منفصل، يعني 5 رحلات مكررة
+// لقاعدة البيانات بس عشان نتأكد من نفس الصلاحيات لنفس المستخدم. cache() من React بتخزن نتيجة
+// أول استدعاء لنفس المستخدم مؤقتًا لحد ما الطلب الحالي يخلص، فباقي الاستدعاءات في نفس الطلب
+// بتاخد النتيجة الجاهزة من غير ما تعمل استعلام تاني - ده بيقلل عدد رحلات قاعدة البيانات في تحميل
+// أي صفحة فيها أكتر من قسم، وده جزء من سبب بطء/تهنيج النظام وقت الضغط.
+export const getEffectivePermissions = cache(async (userId: string): Promise<Set<string>> => {
   const [user] = await db
     .select({ roleId: schema.users.roleId, roleName: schema.roles.name, active: schema.users.active })
     .from(schema.users)
@@ -103,7 +112,19 @@ export async function getEffectivePermissions(userId: string): Promise<Set<strin
     else set.delete(p.key);
   }
   return set;
-}
+});
+
+// نفس فكرة الكاش فوق - بتتنادى غالبًا في نفس الطلب اللي بينادي getEffectivePermissions (زي عمليات
+// البيع/الشراء اللي بتتحقق من الصلاحية العادية وكمان بتتحقق لو المستخدم أدمن كامل عشان تسمح بتجاوز
+// أقل سعر بيع)، فتخزينها مؤقتًا بنفس الطريقة بيوفر رحلة تانية لقاعدة البيانات.
+const getCallerRoleName = cache(async (userId: string): Promise<string | undefined> => {
+  const [actingUser] = await db
+    .select({ roleName: schema.roles.name })
+    .from(schema.users)
+    .innerJoin(schema.roles, eq(schema.users.roleId, schema.roles.id))
+    .where(eq(schema.users.id, userId));
+  return actingUser?.roleName;
+});
 
 export async function can(key: string): Promise<boolean> {
   const s = await getSession();
@@ -142,22 +163,14 @@ export async function requireAnyPermission(keys: string[]) {
 export async function isCallerAdmin(): Promise<boolean> {
   const session = await getSession();
   if (!session) return false;
-  const [actingUser] = await db
-    .select({ roleName: schema.roles.name })
-    .from(schema.users)
-    .innerJoin(schema.roles, eq(schema.users.roleId, schema.roles.id))
-    .where(eq(schema.users.id, session.userId));
-  return actingUser?.roleName === "ADMIN";
+  const roleName = await getCallerRoleName(session.userId);
+  return roleName === "ADMIN";
 }
 
 export async function requireAdminRole() {
   const session = await requireSession();
-  const [actingUser] = await db
-    .select({ roleName: schema.roles.name })
-    .from(schema.users)
-    .innerJoin(schema.roles, eq(schema.users.roleId, schema.roles.id))
-    .where(eq(schema.users.id, session.userId));
-  if (actingUser?.roleName !== "ADMIN") {
+  const roleName = await getCallerRoleName(session.userId);
+  if (roleName !== "ADMIN") {
     throw new Error("العملية دي محصورة على الأدمن الكامل بس - صلاحية \"إدارة المستخدمين\" وحدها مش كفاية عشان تمنع تصعيد صلاحيات");
   }
   return session;
