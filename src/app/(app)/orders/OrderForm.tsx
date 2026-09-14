@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { createOrder, checkDuplicateOrder } from "@/actions/orders";
 import { listProductsWithStock } from "@/actions/products";
 import { listCustomers } from "@/actions/customers";
+import { listPaymentMethods } from "@/actions/cash";
 import { useRouter } from "next/navigation";
 import SimpleCustomerField, { type SimpleCustomer, type SimpleCustomerValue } from "@/components/SimpleCustomerField";
 import { EGYPT_GOVERNORATES } from "@/lib/governorates";
@@ -20,6 +21,7 @@ export default function OrderForm({ locations, orderSources }: any) {
   const [dataError, setDataError] = useState("");
   const [products, setProducts] = useState<any[]>([]);
   const [customers, setCustomers] = useState<SimpleCustomer[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -37,7 +39,10 @@ export default function OrderForm({ locations, orderSources }: any) {
   const [source, setSource] = useState(orderSources.find((s: any) => s.name === "الموقع")?.id || orderSources[0]?.id || "");
   const [orderNotes, setOrderNotes] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
-  const [prepaid, setPrepaid] = useState(false);
+  // العميل ممكن يدفع عربون/مقدم وقت تسجيل الأوردر - المبلغ ده لازم يدخل خزينة حقيقية فورًا (مش بس
+  // يتسجل كـ"نعم/لا" على الأوردر زي قبل كده وتضيع الفلوس من غير ما تتحسب في أي تقرير)
+  const [prepaidAmount, setPrepaidAmount] = useState("");
+  const [prepaidPaymentMethodId, setPrepaidPaymentMethodId] = useState("");
   const [lines, setLines] = useState([{ productId: "", quantity: "", unitPrice: "" }]);
   const [shippingFee, setShippingFee] = useState("");
   const [discount, setDiscount] = useState("");
@@ -49,9 +54,11 @@ export default function OrderForm({ locations, orderSources }: any) {
     setLoadingData(true);
     setDataError("");
     try {
-      const [prods, custs] = await Promise.all([listProductsWithStock(), listCustomers()]);
+      const [prods, custs, methods] = await Promise.all([listProductsWithStock(), listCustomers(), listPaymentMethods()]);
       setProducts(prods as any[]);
       setCustomers(custs as any as SimpleCustomer[]);
+      setPaymentMethods(methods as any[]);
+      if ((methods as any[])[0]?.id) setPrepaidPaymentMethodId((methods as any[])[0].id);
       setLoaded(true);
     } catch (e: any) {
       setDataError(friendlyErrorMessage(e, "تعذر تحميل بيانات المنتجات/العملاء"));
@@ -102,7 +109,8 @@ export default function OrderForm({ locations, orderSources }: any) {
           orderNotes: orderNotes.trim() || undefined,
           deliveryNotes: deliveryNotes.trim() || undefined,
           source,
-          prepaid,
+          prepaidAmount: prepaidAmount ? parseFloat(prepaidAmount) : 0,
+          prepaidPaymentMethodId: prepaidAmount && parseFloat(prepaidAmount) > 0 ? prepaidPaymentMethodId : undefined,
           items,
           discount: discount ? parseFloat(discount) : 0,
           shippingFee: shippingFee ? parseFloat(shippingFee) : 0,
@@ -128,6 +136,10 @@ export default function OrderForm({ locations, orderSources }: any) {
     if (items.length === 0) return setError("لازم تضيف صنف واحد على الأقل بكمية صحيحة");
     if (items.some((i) => !Number.isFinite(i.unitPrice) || i.unitPrice < 0)) return setError("لازم تكتب سعر صحيح لكل صنف");
     if (total < 0) return setError("الإجمالي طلع بالسالب - راجع الخصم/الأسعار");
+    const prepaidNum = parseFloat(prepaidAmount || "0");
+    if (prepaidAmount && (!Number.isFinite(prepaidNum) || prepaidNum < 0)) return setError("لازم تكتب مبلغ عربون صحيح");
+    if (prepaidNum > total) return setError("مبلغ العربون أكبر من إجمالي الأوردر");
+    if (prepaidNum > 0 && !prepaidPaymentMethodId) return setError("لازم تحدد طريقة دفع العربون عشان يدخل الخزينة");
 
     start(async () => {
       try {
@@ -174,7 +186,21 @@ export default function OrderForm({ locations, orderSources }: any) {
               {orderSources.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
-          <label className="flex items-center gap-2 text-sm mt-6"><input type="checkbox" checked={prepaid} onChange={(e) => setPrepaid(e.target.checked)} /> العميل دافع مقدمًا</label>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3 bg-neutral-50 border rounded-lg px-3 py-2">
+          <div>
+            <label className="text-xs text-muted">عربون/مقدم دفعه العميل الآن (اختياري)</label>
+            <input type="number" step="0.01" min="0" value={prepaidAmount} onChange={(e) => setPrepaidAmount(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1" placeholder="0" />
+          </div>
+          {parseFloat(prepaidAmount || "0") > 0 && (
+            <div>
+              <label className="text-xs text-muted">العربون دخل فين؟ *</label>
+              <select value={prepaidPaymentMethodId} onChange={(e) => setPrepaidPaymentMethodId(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1">
+                <option value="">اختر طريقة الدفع</option>
+                {paymentMethods.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+          )}
         </div>
         <p className="text-xs text-muted bg-neutral-50 border rounded-lg px-3 py-2">
           هيتجهز من إيه المحل أو المخزن؟ ده بيتحدد بعد كده من فريق المخازن/الشحن بعد ما الأوردر يتأكد تليفونيًا، مش لازم تحدده أنت دلوقتي.
@@ -221,6 +247,9 @@ export default function OrderForm({ locations, orderSources }: any) {
         <div className="bg-neutral-50 border rounded-lg px-3 py-2 text-sm flex flex-wrap gap-x-6 gap-y-1">
           <div><span className="text-muted">إجمالي الأصناف: </span><span className="font-semibold">{money(subtotal)}</span></div>
           <div><span className="text-muted">الإجمالي الكلي (المبلغ المتوقع تحصيله): </span><span className="font-bold text-primary">{money(total)}</span></div>
+          {parseFloat(prepaidAmount || "0") > 0 && (
+            <div><span className="text-muted">المتبقي بعد العربون: </span><span className="font-semibold">{money(total - parseFloat(prepaidAmount || "0"))}</span></div>
+          )}
         </div>
       </div>
 

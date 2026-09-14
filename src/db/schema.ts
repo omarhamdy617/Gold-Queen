@@ -42,6 +42,11 @@ export const cashTxTypeEnum = pgEnum("cash_tx_type", [
   "TRANSFER_OUT",
   "LOAN_OUT",
   "LOAN_IN",
+  // مقدم/عربون بيتاخد وقت تسجيل الأوردر (قبل التسليم) - نوع مستقل عن SALE_IN (اللي بيتسجل وقت
+  // التحصيل عند التسليم) عشان تقدر تفرّق بينهم في سجل الخزينة والتقارير لو حبيت بعدين
+  "ORDER_DEPOSIT_IN",
+  // إيراد عام مش ناتج من بيع أو تحصيل أوردر أو تحصيل من عميل/تاجر - شاشة "الإيرادات" الجديدة
+  "OTHER_INCOME_IN",
 ]);
 // أنواع حركات السلف: سلّفنا حد فلوس (بتاخد من الخزينة) / استلفنا إحنا من حد (بتضيف للخزينة) /
 // استرجعنا فلوس كنا سلّفناها (بتضيف للخزينة) / رجّعنا فلوس كنا مستلفينها (بتاخد من الخزينة)
@@ -557,7 +562,13 @@ export const orders = pgTable("orders", {
   courierId: text("courier_id").references(() => couriers.id),
   courierName: varchar("courier_name", { length: 150 }),
   status: orderStatusEnum("status").notNull().default("PENDING"),
+  // "prepaid" القديم فضل موجود بس بقى بلا استخدام فعلي (كان مجرد ✓/✗ من غير مبلغ ولا طريقة دفع -
+  // يعني الفلوس مكنتش بتدخل الخزينة ولا بيتحدد دخلت فين). دلوقتي المقدم/العربون بقى بمبلغ حقيقي
+  // وطريقة دفع، وبيدخل الخزينة أوتوماتيك وقت تسجيل الأوردر (شوف createOrder في actions/orders.ts).
+  // سيبنا العمود القديم زي ما هو من غير حذف عشان ميأثرش على بيانات أوردرات قديمة.
   prepaid: boolean("prepaid").notNull().default(false),
+  prepaidAmount: money("prepaid_amount").notNull().default("0"),
+  prepaidPaymentMethodId: text("prepaid_payment_method_id").references(() => paymentMethods.id),
   locationId: text("location_id").references(() => locations.id),
   collectionStatus: collectionStatusEnum("collection_status"),
   collectedAmount: money("collected_amount"),
@@ -652,6 +663,32 @@ export const expenses = pgTable("expenses", {
   categoryId: text("category_id")
     .notNull()
     .references(() => expenseCategories.id),
+  amount: money("amount").notNull(),
+  paymentMethodId: text("payment_method_id")
+    .notNull()
+    .references(() => paymentMethods.id),
+  note: text("note"),
+  createdById: text("created_by_id")
+    .notNull()
+    .references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// --------------------------------------------------------------------------
+// الإيرادات - أي إيراد داخل الشركة مش ناتج من بيع أو تحصيل أوردر أو تحصيل من عميل/تاجر (اللي كل
+// واحد فيهم ليه مساره الخاص أصلًا) - زي عربون/مقدم مش مرتبط بأوردر معيّن، أو أي إيراد متفرّق تاني.
+// نفس بنية "المصروفات" بالظبط (فئة + مبلغ + طريقة دفع + ملاحظة) بس الفلوس بتدخل الخزينة بدل ما تخرج.
+// --------------------------------------------------------------------------
+export const incomeCategories = pgTable("income_categories", {
+  id: cuid(),
+  name: varchar("name", { length: 150 }).notNull().unique(),
+});
+
+export const income = pgTable("income", {
+  id: cuid(),
+  categoryId: text("category_id")
+    .notNull()
+    .references(() => incomeCategories.id),
   amount: money("amount").notNull(),
   paymentMethodId: text("payment_method_id")
     .notNull()

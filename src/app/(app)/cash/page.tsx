@@ -79,6 +79,8 @@ function typeLabel(t: string) {
     TRANSFER_OUT: "تحويل خارج",
     LOAN_OUT: "سلفة/سداد (خارج)",
     LOAN_IN: "سلفة/تحصيل (داخل)",
+    ORDER_DEPOSIT_IN: "عربون أوردر",
+    OTHER_INCOME_IN: "إيراد آخر",
   };
   return map[t] || t;
 }

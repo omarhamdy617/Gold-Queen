@@ -14,6 +14,10 @@ const TYPE_LABELS: Record<string, string> = {
   ADJUSTMENT: "تسوية يدوية",
   TRANSFER_IN: "تحويل داخل",
   TRANSFER_OUT: "تحويل خارج",
+  LOAN_OUT: "سلفة/سداد (خارج)",
+  LOAN_IN: "سلفة/تحصيل (داخل)",
+  ORDER_DEPOSIT_IN: "عربون أوردر",
+  OTHER_INCOME_IN: "إيراد آخر",
 };
 
 export default function TransactionDetail({ id, label }: { id: string; label: string }) {

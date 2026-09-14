@@ -2,7 +2,7 @@
 import { db, schema } from "@/db";
 import { eq, desc, and, or, ilike, gte, sql } from "drizzle-orm";
 import { requirePermission, requireAnyPermission, requireSession, requireAdminRole, logAudit, genCode } from "@/lib/auth";
-import { adjustStock, stockShortageMessage, postCashByPaymentMethod, updateCustomerBalance } from "@/lib/ops";
+import { adjustStock, stockShortageMessage, postCashByPaymentMethod, updateCustomerBalance, lockDrawersInOrder } from "@/lib/ops";
 import { inArray } from "drizzle-orm";
 import { toActionError } from "@/lib/actionError";
 import { normalizePhone } from "@/lib/phone";
@@ -33,7 +33,11 @@ export async function createOrder(input: {
   // مصدر الأوردر بقى id لصف حقيقي في order_sources (مش قيمة enum ثابتة) - قابل للإضافة والتعديل
   // من الإعدادات، فبقى نص عادي بدل union ثابت
   source: string;
-  prepaid: boolean;
+  // مقدم/عربون العميل وقت تسجيل الأوردر (اختياري) - لو مبلغه أكبر من صفر لازم طريقة دفع عشان
+  // يدخل خزينة حقيقية فورًا (شوف postCashByPaymentMethod تحت). العمود القديم "prepaid" (✓/✗ بس
+  // من غير مبلغ) بقى بلا استخدام - سيبناه في القاعدة من غير حذف بس مبقاش بيتقرا ولا بيتكتب هنا.
+  prepaidAmount?: number;
+  prepaidPaymentMethodId?: string;
   locationId?: string;
 }) {
   try {
@@ -62,6 +66,15 @@ async function createOrderInner(input: Parameters<typeof createOrder>[0]) {
   const subtotal = input.items.reduce((s, i) => s + i.quantity * Number(i.unitPrice), 0);
   const total = subtotal - discount + shippingFee;
   if (total < 0) throw new Error("الإجمالي طلع بالسالب - راجع الخصم/الأسعار");
+
+  // مقدم/عربون العميل وقت التسجيل - لازم يكون رقم صحيح ومايزدش عن إجمالي الأوردر (لو زاد، يبقى في
+  // غلطة كتابة والمفروض تتصحح هنا قبل ما فلوس زيادة تتسجل في الخزينة بالغلط)
+  const prepaidAmount = Number(input.prepaidAmount || 0);
+  if (!Number.isFinite(prepaidAmount) || prepaidAmount < 0) throw new Error("مبلغ المقدم غير صحيح");
+  if (prepaidAmount > total) throw new Error(`مبلغ المقدم (${prepaidAmount.toFixed(2)}) أكبر من إجمالي الأوردر (${total.toFixed(2)}) - راجع الرقم`);
+  if (prepaidAmount > 0 && !input.prepaidPaymentMethodId) {
+    throw new Error("لازم تحدد طريقة دفع المقدم عشان المبلغ يدخل الخزينة");
+  }
 
   const order = await db.transaction(async (tx) => {
     // ربط/إنشاء العميل تلقائيًا بالهاتف عشان منعملش عميل مكرر ولما نكتب نفس الرقم تاني يترجعلنا نفس العميل
@@ -101,7 +114,8 @@ async function createOrderInner(input: Parameters<typeof createOrder>[0]) {
         orderNotes: input.orderNotes,
         deliveryNotes: input.deliveryNotes,
         source: input.source,
-        prepaid: input.prepaid,
+        prepaidAmount: prepaidAmount.toFixed(2),
+        prepaidPaymentMethodId: prepaidAmount > 0 ? input.prepaidPaymentMethodId : undefined,
         status: autoConfirmed ? "PREPARING" : "PENDING",
         locationId: input.locationId || undefined,
         subtotal: subtotal.toFixed(2),
@@ -126,6 +140,17 @@ async function createOrderInner(input: Parameters<typeof createOrder>[0]) {
         }
       }
     }
+
+    // المقدم بيدخل الخزينة فورًا لحظة تسجيل الأوردر - ده اللي كان ناقص قبل كده (المبلغ كان بيتسجل
+    // كـ✓/✗ بس على الأوردر نفسه من غير أي أثر في الخزينة ولا تحديد دخل فين بالظبط)
+    if (prepaidAmount > 0 && input.prepaidPaymentMethodId) {
+      await postCashByPaymentMethod(tx, input.prepaidPaymentMethodId, "ORDER_DEPOSIT_IN", prepaidAmount, {
+        note: `مقدم/عربون أوردر ${code}`,
+        refType: "Order",
+        refId: order.id,
+        createdById: session.userId,
+      });
+    }
     return order;
   });
 
@@ -133,6 +158,7 @@ async function createOrderInner(input: Parameters<typeof createOrder>[0]) {
   revalidatePath("/orders");
   revalidatePath("/products");
   revalidatePath("/customers");
+  revalidatePath("/cash");
   return order;
 }
 
@@ -440,16 +466,25 @@ async function updateOrderStatusInner(
       // ربط تحصيل الأوردر فعليًا بالخزينة والتقارير - بس أول مرة (لو الأوردر لسه مالوش فاتورة مرتبطة
       // بيه) عشان لو حد أعاد تأكيد "تم التسليم" لأوردر متسلّم بالفعل (لتصحيح المبلغ مثلًا) منعملش
       // إدخال خزينة أو فاتورة تانية مكررة.
-      const collectedAmt = Number(extra?.collectedAmount || 0);
-      if (extra?.collectionStatus === "COLLECTED" && collectedAmt > 0 && extra?.paymentMethodId && !order.invoiceId) {
+      const collectedAmt = extra?.collectionStatus === "COLLECTED" ? Number(extra?.collectedAmount || 0) : 0;
+      // لو العميل كان دفع عربون/مقدم وقت تسجيل الأوردر، الفلوس دي دخلت الخزينة فعلًا في حينها
+      // (createOrder/updateOrderDetails) - هنا بنضمّها لإجمالي الفاتورة عشان الفاتورة تعكس قيمة
+      // الأوردر الحقيقية، لكن من غير ما ندخّلها الخزينة تاني (تجنبًا للتكرار).
+      const depositAlready = Number(order.prepaidAmount || 0);
+      const invoiceTotal = depositAlready + collectedAmt;
+      // طريقة الدفع المسجلة على الفاتورة: لو اتحصّل حاجة وقت التسليم بتبقى هي الأساس، ولو الأوردر
+      // كان متسدد بالكامل مقدمًا (مفيش حاجة اتحصّلت وقت التسليم) بتبقى طريقة دفع العربون نفسها.
+      const invoicePaymentMethodId = collectedAmt > 0 ? extra!.paymentMethodId! : order.prepaidPaymentMethodId || undefined;
+      if (invoiceTotal > 0 && invoicePaymentMethodId && !order.invoiceId) {
         const orderItems = await tx.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, orderId));
         const productIds = orderItems.map((i) => i.productId);
         const prods = productIds.length ? await tx.select().from(schema.products).where(inArray(schema.products.id, productIds)) : [];
         const prodMap = new Map(prods.map((p) => [p.id, p]));
-        // بدل ما نوزّع المبلغ المحصّل على أسعار بيع المنتجات (اللي ممكن تختلف عن سعر الأوردر المتفق
-        // عليه)، بنستخدم سعر كل صنف زي ما اتكتب فعليًا وقت تسجيل الأوردر (order_items.unit_price)
+        // بدل ما نوزّع إجمالي الفاتورة (عربون + تحصيل تسليم) على أسعار بيع المنتجات (اللي ممكن
+        // تختلف عن سعر الأوردر المتفق عليه)، بنستخدم سعر كل صنف زي ما اتكتب فعليًا وقت تسجيل
+        // الأوردر (order_items.unit_price)
         const referenceTotal = orderItems.reduce((s, i) => s + i.quantity * Number(i.unitPrice || 0), 0);
-        const scale = referenceTotal > 0 ? collectedAmt / referenceTotal : 0;
+        const scale = referenceTotal > 0 ? invoiceTotal / referenceTotal : 0;
 
         const invCode = genCode("INV");
         const [invoice] = await tx
@@ -458,21 +493,21 @@ async function updateOrderStatusInner(
             code: invCode,
             customerId: order.customerId,
             locationId: order.locationId!,
-            subtotal: collectedAmt.toFixed(2),
+            subtotal: invoiceTotal.toFixed(2),
             discount: "0.00",
-            total: collectedAmt.toFixed(2),
-            paidAmount: collectedAmt.toFixed(2),
+            total: invoiceTotal.toFixed(2),
+            paidAmount: invoiceTotal.toFixed(2),
             paymentStatus: "PAID",
-            paymentMethodId: extra.paymentMethodId,
+            paymentMethodId: invoicePaymentMethodId,
             source: order.source,
-            notes: `فاتورة تلقائية عند تسليم/تحصيل الأوردر ${order.code}`,
+            notes: `فاتورة تلقائية عند تسليم/تحصيل الأوردر ${order.code}${depositAlready > 0 ? ` (شامل عربون ${depositAlready.toFixed(2)})` : ""}`,
             createdById: session.userId,
             soldById: order.createdById,
           })
           .returning();
         for (const item of orderItems) {
           const product = prodMap.get(item.productId);
-          const unitPrice = referenceTotal > 0 ? Number(item.unitPrice || 0) * scale : orderItems.length > 0 ? collectedAmt / orderItems.reduce((s, i) => s + i.quantity, 0) : 0;
+          const unitPrice = referenceTotal > 0 ? Number(item.unitPrice || 0) * scale : orderItems.length > 0 ? invoiceTotal / orderItems.reduce((s, i) => s + i.quantity, 0) : 0;
           await tx.insert(schema.salesInvoiceItems).values({
             invoiceId: invoice.id,
             productId: item.productId,
@@ -483,12 +518,16 @@ async function updateOrderStatusInner(
         }
         payload.invoiceId = invoice.id;
 
-        await postCashByPaymentMethod(tx, extra.paymentMethodId, "SALE_IN", collectedAmt, {
-          note: `تحصيل أوردر توصيل ${order.code}`,
-          refType: "Order",
-          refId: orderId,
-          createdById: session.userId,
-        });
+        // العربون اتسجل في الخزينة قبل كده وقت تسجيل/تعديل الأوردر - هنا بس بندخل الجزء اللي
+        // اتحصّل وقت التسليم عشان منضاعفش نفس المبلغ في الخزينة.
+        if (collectedAmt > 0) {
+          await postCashByPaymentMethod(tx, extra!.paymentMethodId!, "SALE_IN", collectedAmt, {
+            note: `تحصيل أوردر توصيل ${order.code}`,
+            refType: "Order",
+            refId: orderId,
+            createdById: session.userId,
+          });
+        }
       }
     }
     if (status === "RETURNED") {
@@ -514,8 +553,21 @@ async function updateOrderStatusInner(
           if (unpaid !== 0 && invoice.customerId) {
             await updateCustomerBalance(tx, invoice.customerId, -unpaid);
           }
-          if (Number(invoice.paidAmount) > 0 && invoice.paymentMethodId) {
-            await postCashByPaymentMethod(tx, invoice.paymentMethodId, "RETURN_OUT", Number(invoice.paidAmount), {
+          // قيمة الفاتورة المحصّلة ممكن تكون جايه من مصدرين مختلفين: عربون اتحصّل وقت تسجيل الأوردر
+          // (بطريقة دفع ممكن تكون مختلفة تمامًا)، ومبلغ اتحصّل وقت التسليم - فبنرجّع كل جزء للخزينة
+          // اللي دخلها فيها فعليًا بدل ما نرجّع كل حاجة من خزينة واحدة غلط.
+          const depositPortion = Math.min(Number(order.prepaidAmount || 0), Number(invoice.paidAmount));
+          const deliveryPortion = Math.max(0, Number(invoice.paidAmount) - depositPortion);
+          if (depositPortion > 0 && order.prepaidPaymentMethodId) {
+            await postCashByPaymentMethod(tx, order.prepaidPaymentMethodId, "RETURN_OUT", depositPortion, {
+              note: `إرجاع أوردر ${order.code} - عكس العربون المدفوع مقدمًا`,
+              refType: "Order",
+              refId: orderId,
+              createdById: session.userId,
+            });
+          }
+          if (deliveryPortion > 0 && invoice.paymentMethodId) {
+            await postCashByPaymentMethod(tx, invoice.paymentMethodId, "RETURN_OUT", deliveryPortion, {
               note: `إرجاع أوردر ${order.code} - عكس تحصيل الفاتورة ${invoice.code}`,
               refType: "Order",
               refId: orderId,
@@ -646,6 +698,12 @@ export async function getOrder(orderId: string) {
   }
   const [sourceRow] = await db.select().from(schema.orderSources).where(eq(schema.orderSources.id, order.source));
 
+  let prepaidPaymentMethodName: string | undefined;
+  if (order.prepaidPaymentMethodId) {
+    const [pm] = await db.select().from(schema.paymentMethods).where(eq(schema.paymentMethods.id, order.prepaidPaymentMethodId));
+    prepaidPaymentMethodName = pm?.name;
+  }
+
   return {
     order,
     items,
@@ -656,6 +714,7 @@ export async function getOrder(orderId: string) {
     deliveredByName: deliverer?.fullName,
     confirmedByName: confirmer?.fullName,
     cancelledByName: canceller?.fullName,
+    prepaidPaymentMethodName,
   };
 }
 
@@ -702,7 +761,8 @@ export async function updateOrderDetails(orderId: string, input: {
   address: string;
   governorate: string;
   source?: string;
-  prepaid?: boolean;
+  prepaidAmount: number;
+  prepaidPaymentMethodId?: string;
   orderNotes?: string;
   deliveryNotes?: string;
   discount?: number;
@@ -718,6 +778,7 @@ export async function updateOrderDetails(orderId: string, input: {
 
 async function updateOrderDetailsInner(orderId: string, input: Parameters<typeof updateOrderDetails>[1]) {
   await requirePermission("orders.manage");
+  const session = await requireSession();
 
   if (!input.customerName?.trim()) throw new Error("اسم العميل مطلوب");
   if (!input.customerPhone?.trim()) throw new Error("رقم الهاتف مطلوب");
@@ -736,6 +797,14 @@ async function updateOrderDetailsInner(orderId: string, input: Parameters<typeof
   const total = subtotal - discount + shippingFee;
   if (total < 0) throw new Error("الإجمالي طلع بالسالب - راجع الخصم/الأسعار");
 
+  // نفس تحقق المقدم اللي في تسجيل الأوردر بالظبط
+  const newPrepaidAmount = Number(input.prepaidAmount || 0);
+  if (!Number.isFinite(newPrepaidAmount) || newPrepaidAmount < 0) throw new Error("مبلغ المقدم غير صحيح");
+  if (newPrepaidAmount > total) throw new Error(`مبلغ المقدم (${newPrepaidAmount.toFixed(2)}) أكبر من إجمالي الأوردر الجديد (${total.toFixed(2)}) - راجع الرقم`);
+  if (newPrepaidAmount > 0 && !input.prepaidPaymentMethodId) {
+    throw new Error("لازم تحدد طريقة دفع المقدم عشان المبلغ يدخل الخزينة");
+  }
+
   let before: any = null;
   await db.transaction(async (tx) => {
     const [order] = await tx.select().from(schema.orders).where(eq(schema.orders.id, orderId)).for("update");
@@ -744,6 +813,36 @@ async function updateOrderDetailsInner(orderId: string, input: Parameters<typeof
       throw new Error('الأوردر ده خلص خلاص (تم التسليم/مرتجع/ملغي) - متقدرش تعدل بياناته دلوقتي. لو محتاج تصحح غلطة، استخدم "تراجع عن آخر تحديث" (أدمن) الأول');
     }
     before = order;
+
+    // لو مبلغ المقدم أو طريقة دفعه اتغيّروا، بنعكس أثر المقدم القديم في خزينته (لو كان فيه أصلًا)
+    // ونطبّق الجديد - نفس فكرة تعديل المصروف بالظبط (updateExpense في actions/expenses.ts)
+    const oldPrepaidAmount = Number(order.prepaidAmount || 0);
+    const oldPrepaidMethod = order.prepaidPaymentMethodId || undefined;
+    const prepaidChanged = oldPrepaidAmount !== newPrepaidAmount || (newPrepaidAmount > 0 && oldPrepaidMethod !== input.prepaidPaymentMethodId);
+    if (prepaidChanged) {
+      if (oldPrepaidAmount > 0 && oldPrepaidMethod) {
+        // احتمال Deadlock لو الخزينتين هيتلمسوا مع بعض (زي تعديل مصروف بيبدّل طريقة الدفع) - بنقفلهم
+        // بترتيب ثابت الأول
+        if (newPrepaidAmount > 0 && input.prepaidPaymentMethodId && input.prepaidPaymentMethodId !== oldPrepaidMethod) {
+          await lockDrawersInOrder(tx, [oldPrepaidMethod, input.prepaidPaymentMethodId]);
+        }
+        await postCashByPaymentMethod(tx, oldPrepaidMethod, "ADJUSTMENT", oldPrepaidAmount, {
+          note: `عكس مقدم قديم قبل تعديل أوردر ${order.code}`,
+          refType: "Order",
+          refId: orderId,
+          createdById: session.userId,
+          direction: "out",
+        });
+      }
+      if (newPrepaidAmount > 0 && input.prepaidPaymentMethodId) {
+        await postCashByPaymentMethod(tx, input.prepaidPaymentMethodId, "ORDER_DEPOSIT_IN", newPrepaidAmount, {
+          note: `مقدم/عربون أوردر ${order.code} (بعد تعديل)`,
+          refType: "Order",
+          refId: orderId,
+          createdById: session.userId,
+        });
+      }
+    }
 
     const oldItems = await tx.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, orderId));
 
@@ -801,7 +900,8 @@ async function updateOrderDetailsInner(orderId: string, input: Parameters<typeof
         address: input.address.trim(),
         governorate: input.governorate.trim(),
         source: input.source || order.source,
-        prepaid: input.prepaid ?? order.prepaid,
+        prepaidAmount: newPrepaidAmount.toFixed(2),
+        prepaidPaymentMethodId: newPrepaidAmount > 0 ? input.prepaidPaymentMethodId : null,
         orderNotes: input.orderNotes?.trim() || null,
         deliveryNotes: input.deliveryNotes?.trim() || null,
         subtotal: subtotal.toFixed(2),
@@ -822,6 +922,7 @@ async function updateOrderDetailsInner(orderId: string, input: Parameters<typeof
   revalidatePath(`/orders/${orderId}`);
   revalidatePath("/products");
   revalidatePath("/customers");
+  revalidatePath("/cash");
   return order;
 }
 
@@ -910,8 +1011,22 @@ async function revertOrderStatusInner(orderId: string) {
       if (order.invoiceId && !before.invoiceId) {
         const [invoice] = await tx.select().from(schema.salesInvoices).where(eq(schema.salesInvoices.id, order.invoiceId)).for("update");
         if (invoice) {
-          if (invoice.paymentMethodId && Number(invoice.paidAmount) > 0) {
-            await postCashByPaymentMethod(tx, invoice.paymentMethodId, "ADJUSTMENT", Number(invoice.paidAmount), {
+          // نفس تقسيم "عربون + تحصيل تسليم" الموجود في عكس المرتجعات بالظبط - جزء من paidAmount
+          // ممكن يكون جايًا من عربون اتحصّل في خزينة مختلفة عن خزينة التحصيل وقت التسليم، فبنرجّع كل
+          // جزء لخزينته الصح بدل ما نرجّع كل حاجة من خزينة واحدة غلط.
+          const depositPortion = Math.min(Number(order.prepaidAmount || 0), Number(invoice.paidAmount));
+          const deliveryPortion = Math.max(0, Number(invoice.paidAmount) - depositPortion);
+          if (depositPortion > 0 && order.prepaidPaymentMethodId) {
+            await postCashByPaymentMethod(tx, order.prepaidPaymentMethodId, "ADJUSTMENT", depositPortion, {
+              direction: "out",
+              note: `عكس عربون الأوردر ${order.code} (تراجع أدمن عن تحديث غلط)`,
+              refType: "Order",
+              refId: orderId,
+              createdById: session.userId,
+            });
+          }
+          if (deliveryPortion > 0 && invoice.paymentMethodId) {
+            await postCashByPaymentMethod(tx, invoice.paymentMethodId, "ADJUSTMENT", deliveryPortion, {
               direction: "out",
               note: `عكس تحصيل الأوردر ${order.code} (تراجع أدمن عن تحديث غلط)`,
               refType: "Order",

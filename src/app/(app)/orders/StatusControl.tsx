@@ -19,6 +19,8 @@ export default function StatusControl({
   paymentMethods = [],
   confirmationAttempts = 0,
   orderCollectionStatus,
+  prepaidAmount = 0,
+  orderTotal = 0,
 }: {
   orderId: string;
   status: string;
@@ -27,6 +29,8 @@ export default function StatusControl({
   paymentMethods?: { id: string; name: string }[];
   confirmationAttempts?: number;
   orderCollectionStatus?: "PENDING" | "COLLECTED" | null;
+  prepaidAmount?: number | string;
+  orderTotal?: number | string;
 }) {
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -141,10 +145,20 @@ export default function StatusControl({
   // -------------------- في الشحن / تم التسليم: نفس منطق التسليم/الإرجاع القديم --------------------
   const allowedOptions = [status, ...(ORDER_STATUS_TRANSITIONS[status] || [])];
 
+  const depositAlready = Number(prepaidAmount || 0);
+  const remainingAfterDeposit = Math.max(0, Number(orderTotal || 0) - depositAlready);
+
   function onChange(newStatus: string) {
     setError("");
     if (newStatus === status) return;
-    if (newStatus === "DELIVERED" || newStatus === "RETURNED") {
+    if (newStatus === "DELIVERED") {
+      // لو الأوردر معاه عربون اتحصّل قبل كده، بنقترح المبلغ المتبقي بس كقيمة مبدئية (بدل ما نسيب
+      // الخانة فاضية والمستخدم يحصّل غلط قيمة الأوردر كاملة تاني فوق العربون)
+      if (depositAlready > 0) setCollectedAmount(remainingAfterDeposit > 0 ? String(remainingAfterDeposit) : "0");
+      setPendingStatus(newStatus);
+      return;
+    }
+    if (newStatus === "RETURNED") {
       setPendingStatus(newStatus);
       return;
     }
@@ -177,6 +191,11 @@ export default function StatusControl({
       <div className="bg-neutral-50 border rounded-lg p-2 space-y-2 min-w-[220px]">
         {pendingStatus === "DELIVERED" && (
           <>
+            {depositAlready > 0 && (
+              <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                💰 عربون مأخوذ قبل كده: {depositAlready.toFixed(2)} جنيه - المتبقي المتوقع: {remainingAfterDeposit.toFixed(2)} جنيه
+              </div>
+            )}
             <div className="text-xs font-semibold">حالة التحصيل؟</div>
             <select value={collectionStatus} onChange={(e) => setCollectionStatus(e.target.value as any)} className="border rounded px-2 py-1 text-xs w-full">
               <option value="COLLECTED">تم التحصيل</option>
@@ -222,7 +241,7 @@ export default function StatusControl({
       {status === "DELIVERED" && orderCollectionStatus === "PENDING" && (
         <button
           disabled={pending}
-          onClick={() => { setCollectionStatus("COLLECTED"); setPendingStatus("DELIVERED"); }}
+          onClick={() => { setCollectionStatus("COLLECTED"); if (depositAlready > 0) setCollectedAmount(remainingAfterDeposit > 0 ? String(remainingAfterDeposit) : "0"); setPendingStatus("DELIVERED"); }}
           className="text-[11px] text-amber-700 underline w-fit"
         >
           💰 سجّل التحصيل الآن

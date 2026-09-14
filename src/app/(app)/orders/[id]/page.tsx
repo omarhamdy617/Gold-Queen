@@ -1,5 +1,6 @@
 import { getOrder, getRevertPreviewStatus } from "@/actions/orders";
 import { listProductsWithStock } from "@/actions/products";
+import { listPaymentMethods } from "@/actions/cash";
 import { money, dateAr } from "@/lib/format";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -31,10 +32,11 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   if (!data) return notFound();
   // اسم مصدر الأوردر (sourceName) بقى بييجي جاهز من getOrder نفسها - مصادر الأوردر بقت جدول
   // حقيقي قابل للتعديل من الإعدادات بدل قيم enum ثابتة (نفس أسلوب locationName بالظبط)
-  const { order, items, locationName, sourceName, createdByName, assignedByName, deliveredByName, confirmedByName, cancelledByName } = data;
+  const { order, items, locationName, sourceName, createdByName, assignedByName, deliveredByName, confirmedByName, cancelledByName, prepaidPaymentMethodName } = data;
 
   const canEditDetails = canManage && !["DELIVERED", "RETURNED", "CANCELLED"].includes(order.status);
   const products = canEditDetails ? await listProductsWithStock() : [];
+  const paymentMethods = canEditDetails ? await listPaymentMethods() : [];
   const revertToStatus = isAdmin ? await getRevertPreviewStatus(id) : null;
 
   return (
@@ -53,7 +55,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         </div>
       </div>
 
-      {canEditDetails && <OrderEditForm orderId={id} products={products} order={order} items={items} />}
+      {canEditDetails && <OrderEditForm orderId={id} products={products} order={order} items={items} paymentMethods={paymentMethods} />}
 
       <div className="app-card p-4 space-y-3 print:shadow-none">
         <PrintHeader subtitle={`تفاصيل أوردر - ${LABELS[order.status]}`} code={order.code} date={dateAr(order.createdAt)} />
@@ -64,7 +66,10 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           <div><span className="text-muted">العنوان: </span>{order.address}</div>
           <div><span className="text-muted">المحافظة: </span>{order.governorate}</div>
           <div><span className="text-muted">المصدر: </span>{sourceName}</div>
-          <div><span className="text-muted">مدفوع مقدمًا: </span>{order.prepaid ? "نعم" : "لا"}</div>
+          <div>
+            <span className="text-muted">مدفوع مقدمًا (عربون): </span>
+            {Number(order.prepaidAmount || 0) > 0 ? `${money(order.prepaidAmount)}${prepaidPaymentMethodName ? ` (${prepaidPaymentMethodName})` : ""}` : "لا يوجد"}
+          </div>
           <div><span className="text-muted">هيتجهز من: </span>{locationName || "-"}</div>
           <div><span className="text-muted">التاريخ: </span>{dateAr(order.createdAt)}</div>
           {order.orderNotes && <div className="sm:col-span-2"><span className="text-muted">ملاحظات الأوردر: </span>{order.orderNotes}</div>}
@@ -124,6 +129,12 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           <div className="flex justify-between"><span className="text-muted">مصاريف الشحن</span><span>{money(order.shippingFee)}</span></div>
           <div className="flex justify-between"><span className="text-muted">الخصم</span><span>-{money(order.discount)}</span></div>
           <div className="flex justify-between font-bold text-primary border-t pt-1"><span>الإجمالي</span><span>{money(order.total)}</span></div>
+          {Number(order.prepaidAmount || 0) > 0 && (
+            <>
+              <div className="flex justify-between"><span className="text-muted">عربون مدفوع مقدمًا</span><span>-{money(order.prepaidAmount)}</span></div>
+              <div className="flex justify-between font-semibold border-t pt-1"><span>المتبقي المتوقع</span><span>{money(Number(order.total) - Number(order.prepaidAmount))}</span></div>
+            </>
+          )}
         </div>
       </div>
     </div>

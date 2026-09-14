@@ -445,7 +445,7 @@ export async function getFinancialAnalytics(periodKey: PeriodKey, customFrom?: s
     // TRANSFER_IN/OUT مستبعدين من صافي التدفق - دول مجرد نقل بين خزنتين جوه نفس الشركة (بيلغوا
     // بعض حسابيًا)، مش فلوس حقيقية داخلة أو خارجة من الشركة. ADJUSTMENT معروضة لوحدها لأن اتجاهها
     // (تسوية زيادة أو نقصان) مش متسجل صراحة في نوع الحركة نفسه - القيمة المخزنة مقدار مطلق بس.
-    const IN_TYPES = new Set(["SALE_IN", "COLLECTION_IN", "LOAN_IN", "RETURN_IN"]);
+    const IN_TYPES = new Set(["SALE_IN", "COLLECTION_IN", "LOAN_IN", "RETURN_IN", "ORDER_DEPOSIT_IN", "OTHER_INCOME_IN"]);
     const OUT_TYPES = new Set(["PURCHASE_OUT", "EXPENSE_OUT", "PAYMENT_OUT", "LOAN_OUT", "RETURN_OUT"]);
     let cashIn = 0, cashOut = 0, adjustments = 0;
     for (const r of cashRows) {

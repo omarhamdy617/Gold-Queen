@@ -15,11 +15,13 @@ export default function OrderEditForm({
   products,
   order,
   items,
+  paymentMethods,
 }: {
   orderId: string;
   products: any[];
   order: any;
   items: ExistingItem[];
+  paymentMethods: any[];
 }) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
@@ -34,7 +36,8 @@ export default function OrderEditForm({
   const [source, setSource] = useState(order.source || "WEBSITE");
   const [orderNotes, setOrderNotes] = useState(order.orderNotes || "");
   const [deliveryNotes, setDeliveryNotes] = useState(order.deliveryNotes || "");
-  const [prepaid, setPrepaid] = useState(!!order.prepaid);
+  const [prepaidAmount, setPrepaidAmount] = useState(String(order.prepaidAmount ?? "0"));
+  const [prepaidPaymentMethodId, setPrepaidPaymentMethodId] = useState(order.prepaidPaymentMethodId || paymentMethods[0]?.id || "");
   const [lines, setLines] = useState(
     items.length > 0
       ? items.map((it) => ({ productId: it.productId, quantity: String(it.quantity), unitPrice: it.unitPrice }))
@@ -67,6 +70,10 @@ export default function OrderEditForm({
     if (finalItems.length === 0) return setError("لازم يفضل صنف واحد على الأقل بكمية صحيحة");
     if (finalItems.some((i) => !Number.isFinite(i.unitPrice) || i.unitPrice < 0)) return setError("لازم تكتب سعر صحيح لكل صنف");
     if (total < 0) return setError("الإجمالي طلع بالسالب - راجع الخصم/الأسعار");
+    const prepaidNum = parseFloat(prepaidAmount || "0");
+    if (!Number.isFinite(prepaidNum) || prepaidNum < 0) return setError("لازم تكتب مبلغ عربون صحيح");
+    if (prepaidNum > total) return setError("مبلغ العربون أكبر من إجمالي الأوردر");
+    if (prepaidNum > 0 && !prepaidPaymentMethodId) return setError("لازم تحدد طريقة دفع العربون عشان يدخل الخزينة");
 
     start(async () => {
       try {
@@ -77,7 +84,8 @@ export default function OrderEditForm({
           address: address.trim(),
           governorate: governorate.trim(),
           source: source as any,
-          prepaid,
+          prepaidAmount: prepaidNum,
+          prepaidPaymentMethodId: prepaidNum > 0 ? prepaidPaymentMethodId : undefined,
           orderNotes: orderNotes.trim() || undefined,
           deliveryNotes: deliveryNotes.trim() || undefined,
           items: finalItems,
@@ -135,7 +143,22 @@ export default function OrderEditForm({
               <option value="WEBSITE">الموقع</option><option value="PHONE">تليفون</option><option value="WHATSAPP">واتساب</option><option value="FACEBOOK">فيسبوك</option><option value="OTHER">أخرى</option>
             </select>
           </div>
-          <label className="flex items-center gap-2 text-sm mt-6"><input type="checkbox" checked={prepaid} onChange={(e) => setPrepaid(e.target.checked)} /> العميل دافع مقدمًا</label>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3 bg-neutral-50 border rounded-lg px-3 py-2">
+          <div>
+            <label className="text-xs text-muted">عربون/مقدم دفعه العميل (اختياري)</label>
+            <input type="number" step="0.01" min="0" value={prepaidAmount} onChange={(e) => setPrepaidAmount(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1" placeholder="0" />
+          </div>
+          {parseFloat(prepaidAmount || "0") > 0 && (
+            <div>
+              <label className="text-xs text-muted">العربون دخل فين؟ *</label>
+              <select value={prepaidPaymentMethodId} onChange={(e) => setPrepaidPaymentMethodId(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1">
+                <option value="">اختر طريقة الدفع</option>
+                {paymentMethods.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+          )}
+          <p className="text-xs text-muted sm:col-span-2">لو غيّرت المبلغ أو طريقة الدفع، الخزينة هتتعدّل تلقائيًا (هيترجع القديم ويتسجل الجديد).</p>
         </div>
         <div>
           <label className="text-xs text-muted">ملاحظات الأوردر</label>

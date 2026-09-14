@@ -86,6 +86,10 @@ export const PERMISSION_GROUPS: { group: string; perms: { key: string; label: st
     perms: [{ key: "expenses.manage", label: "تسجيل المصروفات" }],
   },
   {
+    group: "الإيرادات",
+    perms: [{ key: "income.manage", label: "تسجيل الإيرادات الأخرى" }],
+  },
+  {
     group: "التقارير والوضع المالي",
     perms: [
       { key: "reports.view", label: "عرض التقارير" },
@@ -124,6 +128,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "customers.manage",
     "customers.statement",
     "expenses.manage",
+    "income.manage",
     "reports.view",
     "finance.view",
     "quotes.manage",
