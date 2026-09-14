@@ -2,6 +2,7 @@ import { listCustomers } from "@/actions/customers";
 import { money } from "@/lib/format";
 import Link from "next/link";
 import CustomerForm from "./CustomerForm";
+import AutoRefresh from "@/components/AutoRefresh";
 
 export default async function CustomersPage({
   searchParams,
@@ -15,6 +16,7 @@ export default async function CustomersPage({
   });
   return (
     <div className="space-y-6">
+      <AutoRefresh intervalMs={15000} />
       <h1 className="text-xl font-bold">العملاء والتجار</h1>
       <CustomerForm />
       <form className="flex flex-wrap gap-2 items-center">

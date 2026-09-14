@@ -3,6 +3,7 @@ import { money, dateAr } from "@/lib/format";
 import CashAdjustForm from "./AdjustForm";
 import TransactionDetail from "./TransactionDetail";
 import TransferForm from "./TransferForm";
+import AutoRefresh from "@/components/AutoRefresh";
 
 export default async function CashPage() {
   const drawers = await listCashDrawers();
@@ -11,6 +12,7 @@ export default async function CashPage() {
 
   return (
     <div className="space-y-6">
+      <AutoRefresh intervalMs={15000} />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-bold">الخزائن</h1>
         <div className="bg-gold text-white rounded-xl px-5 py-3 font-bold">

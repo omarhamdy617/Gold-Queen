@@ -2,6 +2,7 @@ import { getDashboardData } from "@/actions/dashboard";
 import { money, num } from "@/lib/format";
 import Link from "next/link";
 import AlertsBanner from "@/components/AlertsBanner";
+import AutoRefresh from "@/components/AutoRefresh";
 import { can } from "@/lib/auth";
 
 export default async function DashboardPage() {
@@ -31,6 +32,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <AutoRefresh intervalMs={15000} />
       <h1 className="text-xl font-bold">لوحة تحكم الأدمن</h1>
 
       <AlertsBanner alerts={bannerAlerts} />

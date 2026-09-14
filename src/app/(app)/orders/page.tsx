@@ -11,6 +11,7 @@ import ShippingAssignForm from "./ShippingAssignForm";
 import AssignLocationForm from "./AssignLocationForm";
 import OrderSearchBox from "./OrderSearchBox";
 import Link from "next/link";
+import AutoRefresh from "@/components/AutoRefresh";
 
 // رفعنا المهلة القصوى لتنفيذ الصفحة دي على السيرفر (Vercel) كأمان إضافي، لكن السبب الجذري للبطء
 // كان حاجة تانية: كل مرة أي حد يغيّر حالة أي أوردر، الصفحة كلها كانت بتتحدث (router.refresh) وكانت
@@ -67,6 +68,11 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="space-y-6">
+      {/* الصفحة دي بالذات بتجيب أكتر من استعلام من قاعدة البيانات مقارنة بباقي الشاشات (شوف
+          التعليق فوق عند maxDuration - دي كانت سبب بطء فعلي قبل كده). فبنخليها تتحدّث تلقائي كل
+          30 ثانية بدل 15 زي باقي الشاشات - نفس فكرة التحديث التلقائي، بس بفاصل زمني أوسع شوية
+          حفاظًا على نفس الأداء اللي اتصلح. */}
+      <AutoRefresh intervalMs={30000} />
       <h1 className="text-xl font-bold">الأوردرات والشحن</h1>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">

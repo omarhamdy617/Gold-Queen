@@ -1,6 +1,7 @@
 import { listSuppliers, getTotalSuppliersPayable } from "@/actions/purchases";
 import { money } from "@/lib/format";
 import Link from "next/link";
+import AutoRefresh from "@/components/AutoRefresh";
 
 export default async function SuppliersPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const { q } = await searchParams;
@@ -8,6 +9,7 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="space-y-6">
+      <AutoRefresh intervalMs={15000} />
       <h1 className="text-xl font-bold">الموردين</h1>
 
       <div className="app-card p-4 flex items-center justify-between flex-wrap gap-3">

@@ -3,6 +3,7 @@ import { listAllOrderSources } from "@/actions/orderSources";
 import { money, dateAr } from "@/lib/format";
 import Link from "next/link";
 import InvoiceSearchBox from "./InvoiceSearchBox";
+import AutoRefresh from "@/components/AutoRefresh";
 
 export default async function SalesPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const { q } = await searchParams;
@@ -13,6 +14,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const sourceMap: Record<string, string> = Object.fromEntries(orderSources.map((s: any) => [s.id, s.name]));
   return (
     <div className="space-y-6">
+      <AutoRefresh intervalMs={15000} />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-bold">الفواتير</h1>
         <Link href="/sales/new" className="bg-gold text-white rounded-lg px-4 py-2 text-sm">+ فاتورة جديدة</Link>

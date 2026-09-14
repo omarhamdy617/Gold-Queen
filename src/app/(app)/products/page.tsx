@@ -5,6 +5,7 @@ import ProductForm from "./ProductForm";
 import EditProductButton from "./EditProductButton";
 import Link from "next/link";
 import { can } from "@/lib/auth";
+import AutoRefresh from "@/components/AutoRefresh";
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const { q } = await searchParams;
@@ -20,6 +21,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="space-y-6">
+      <AutoRefresh intervalMs={15000} />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-bold">المنتجات والمخزون</h1>
         <div className="flex gap-4">
