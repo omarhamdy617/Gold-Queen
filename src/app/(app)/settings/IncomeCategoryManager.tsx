@@ -1,14 +1,13 @@
 "use client";
 import { useState, useTransition } from "react";
-import { createExpenseCategory, deleteExpenseCategory } from "@/actions/expenses";
+import { createIncomeCategory, deleteIncomeCategory } from "@/actions/income";
 import { useRouter } from "next/navigation";
 import { isActionError } from "@/lib/actionError";
 import { friendlyErrorMessage } from "@/lib/errors";
 
-// عرض تصنيفات المصروفات مع إمكانية إضافة تصنيف جديد وحذف تصنيف موجود - الحذف بيترفض تلقائيًا لو
-// التصنيف مستخدم في أي مصروف مسجّل قبل كده (الحماية الفعلية موجودة في deleteExpenseCategory نفسها
-// في السيرفر). قبل كده الشاشة كانت بس بتعرض لستة ثابتة (bullet list) من غير أي إمكانية حذف خالص.
-export default function ExpenseCategoryManager({ categories }: { categories: any[] }) {
+// نفس ExpenseCategoryManager بالظبط (شوف التعليق هناك) بس لتصنيفات الإيرادات - إضافة تصنيف جديد
+// وحذف تصنيف موجود، والحذف بيترفض تلقائيًا لو التصنيف مستخدم في أي إيراد مسجّل قبل كده.
+export default function IncomeCategoryManager({ categories }: { categories: any[] }) {
   const [name, setName] = useState("");
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -16,11 +15,11 @@ export default function ExpenseCategoryManager({ categories }: { categories: any
   const [rowError, setRowError] = useState<Record<string, string>>({});
 
   function remove(c: any) {
-    if (!confirm(`متأكد إنك عايز تمسح تصنيف "${c.name}"؟ لو مستخدم في أي مصروف مسجّل هيترفض الحذف تلقائيًا.`)) return;
+    if (!confirm(`متأكد إنك عايز تمسح تصنيف "${c.name}"؟ لو مستخدم في أي إيراد مسجّل هيترفض الحذف تلقائيًا.`)) return;
     setRowError((prev) => ({ ...prev, [c.id]: "" }));
     start(async () => {
       try {
-        const r = await deleteExpenseCategory(c.id);
+        const r = await deleteIncomeCategory(c.id);
         if (isActionError(r)) {
           setRowError((prev) => ({ ...prev, [c.id]: r.error }));
           return;
@@ -34,7 +33,7 @@ export default function ExpenseCategoryManager({ categories }: { categories: any
 
   return (
     <div className="app-card p-4 space-y-3">
-      <h2 className="font-bold">تصنيفات المصروفات</h2>
+      <h2 className="font-bold">تصنيفات الإيرادات</h2>
       <ul className="text-sm space-y-2">
         {categories.map((c) => (
           <li key={c.id}>
@@ -56,7 +55,7 @@ export default function ExpenseCategoryManager({ categories }: { categories: any
           start(async () => {
             if (!name.trim()) return;
             try {
-              await createExpenseCategory(name.trim());
+              await createIncomeCategory(name.trim());
               setName("");
               router.refresh();
             } catch (err: any) {

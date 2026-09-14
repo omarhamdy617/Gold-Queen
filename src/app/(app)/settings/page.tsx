@@ -2,6 +2,7 @@ import { getSettings } from "@/actions/settings";
 import { listPaymentMethods, createPaymentMethodWithDrawer } from "@/actions/cash";
 import { listLocations, createLocation } from "@/actions/products";
 import { listExpenseCategories } from "@/actions/expenses";
+import { listIncomeCategories } from "@/actions/income";
 import { listCouriers, listShippingCompanies } from "@/actions/orders";
 import { listAllOrderSources } from "@/actions/orderSources";
 import SettingsForm from "./SettingsForm";
@@ -10,17 +11,19 @@ import AddLocation from "./AddLocation";
 import LocationList from "./LocationList";
 import BackupButton from "./BackupButton";
 import ExpenseCategoryManager from "./ExpenseCategoryManager";
+import IncomeCategoryManager from "./IncomeCategoryManager";
 import ShippingManager from "./ShippingManager";
 import OrderSourceList from "./OrderSourceList";
 import AddOrderSource from "./AddOrderSource";
 
 export default async function SettingsPage() {
-  // رجّعنا الاستعلامات السبعة دي تتبعت واحد ورا التاني بدل ما تتزاحم كلها في نفس اللحظة - نفس
+  // رجّعنا الاستعلامات التمنية دي تتبعت واحد ورا التاني بدل ما تتزاحم كلها في نفس اللحظة - نفس
   // إصلاح صفحة الأوردرات (شوف التعليق هناك).
   const settings = await getSettings();
   const paymentMethods = await listPaymentMethods();
   const locations = await listLocations();
   const expenseCategories = await listExpenseCategories();
+  const incomeCategories = await listIncomeCategories();
   const couriers = await listCouriers();
   const shippingCompanies = await listShippingCompanies();
   const orderSources = await listAllOrderSources();
@@ -44,6 +47,8 @@ export default async function SettingsPage() {
       </div>
 
       <ExpenseCategoryManager categories={expenseCategories} />
+
+      <IncomeCategoryManager categories={incomeCategories} />
 
       <ShippingManager couriers={couriers} shippingCompanies={shippingCompanies} />
 

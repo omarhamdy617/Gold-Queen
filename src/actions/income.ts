@@ -23,6 +23,27 @@ export async function createIncomeCategory(name: string) {
   return c;
 }
 
+export async function deleteIncomeCategory(id: string) {
+  try {
+    return await deleteIncomeCategoryInner(id);
+  } catch (e) {
+    return toActionError(e, "تعذر حذف التصنيف");
+  }
+}
+
+// نفس حماية deleteExpenseCategory بالظبط (شوف التعليق هناك) - رفض الحذف برسالة واضحة لو فيه أي
+// إيراد مستخدم التصنيف ده قبل كده، بدل ما نسيب قيد الـ foreign key يرفضه برسالة تقنية.
+async function deleteIncomeCategoryInner(id: string) {
+  await requirePermission("income.manage");
+  const [row] = await db.select({ id: schema.income.id }).from(schema.income).where(eq(schema.income.categoryId, id)).limit(1);
+  if (row) throw new Error('متقدرش تمسح التصنيف ده - مستخدم في إيراد أو أكتر مسجّل قبل كده. غيّر تصنيف الإيرادات دي لتصنيف تاني الأول لو عايز تمسحه.');
+  const [deleted] = await db.delete(schema.incomeCategories).where(eq(schema.incomeCategories.id, id)).returning();
+  if (!deleted) throw new Error("التصنيف غير موجود (يمكن اتمسح بالفعل)");
+  revalidatePath("/settings");
+  revalidatePath("/income");
+  return deleted;
+}
+
 export async function createIncome(input: { categoryId: string; amount: number; paymentMethodId: string; note?: string }) {
   try {
     return await createIncomeInner(input);

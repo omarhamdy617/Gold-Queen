@@ -20,6 +20,29 @@ export async function createExpenseCategory(name: string) {
   return c;
 }
 
+export async function deleteExpenseCategory(id: string) {
+  try {
+    return await deleteExpenseCategoryInner(id);
+  } catch (e) {
+    return toActionError(e, "تعذر حذف التصنيف");
+  }
+}
+
+// التصنيف مربوط NOT NULL بعمود category_id في جدول expenses - حذف تصنيف مستخدم في مصروف مسجّل
+// قبل كده كان هيسيب المصروف ده من غير تصنيف يتعرض بدله. نفس حماية deleteLocation/deleteOrderSource
+// بالظبط: رفض الحذف برسالة واضحة لو فيه أي مصروف مستخدم فيه، بدل ما نسيب قيد الـ foreign key في
+// قاعدة البيانات يرفضه برسالة تقنية مش مفهومة للمستخدم.
+async function deleteExpenseCategoryInner(id: string) {
+  await requirePermission("expenses.manage");
+  const [row] = await db.select({ id: schema.expenses.id }).from(schema.expenses).where(eq(schema.expenses.categoryId, id)).limit(1);
+  if (row) throw new Error('متقدرش تمسح التصنيف ده - مستخدم في مصروف أو أكتر مسجّل قبل كده. غيّر تصنيف المصروفات دي لتصنيف تاني الأول لو عايز تمسحه.');
+  const [deleted] = await db.delete(schema.expenseCategories).where(eq(schema.expenseCategories.id, id)).returning();
+  if (!deleted) throw new Error("التصنيف غير موجود (يمكن اتمسح بالفعل)");
+  revalidatePath("/settings");
+  revalidatePath("/expenses");
+  return deleted;
+}
+
 export async function createExpense(input: { categoryId: string; amount: number; paymentMethodId: string; note?: string }) {
   try {
     return await createExpenseInner(input);
