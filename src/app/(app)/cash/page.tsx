@@ -1,9 +1,11 @@
+import ExcelExportForm from "@/components/ExcelExportForm";
 import { listCashDrawers, listCashTransactions } from "@/actions/cash";
 import { money, dateAr } from "@/lib/format";
 import CashAdjustForm from "./AdjustForm";
 import TransactionDetail from "./TransactionDetail";
 import TransferForm from "./TransferForm";
 import AutoRefresh from "@/components/AutoRefresh";
+import { cashTxLabel as typeLabel } from "@/lib/cashTypes";
 
 export default async function CashPage() {
   const drawers = await listCashDrawers();
@@ -19,6 +21,7 @@ export default async function CashPage() {
           إجمالي الكاش: {money(total)}
         </div>
       </div>
+      <ExcelExportForm action="/api/export/finance" label="تنزيل Excel (حركات الخزائن والمصروفات والإيرادات)" />
 
       <TransferForm drawers={drawers} />
 
@@ -63,26 +66,4 @@ export default async function CashPage() {
       </div>
     </div>
   );
-}
-
-function typeLabel(t: string) {
-  const map: Record<string, string> = {
-    SALE_IN: "تحصيل بيع",
-    PURCHASE_OUT: "دفع مشتريات",
-    EXPENSE_OUT: "مصروف",
-    COLLECTION_IN: "تحصيل من تاجر",
-    PAYMENT_OUT: "دفع لمورد",
-    RETURN_OUT: "استرداد للعميل",
-    RETURN_IN: "استرداد من مورد",
-    ADJUSTMENT: "تسوية يدوية",
-    TRANSFER_IN: "تحويل داخل",
-    TRANSFER_OUT: "تحويل خارج",
-    LOAN_OUT: "سلفة/سداد (خارج)",
-    LOAN_IN: "سلفة/تحصيل (داخل)",
-    ORDER_DEPOSIT_IN: "عربون أوردر",
-    OTHER_INCOME_IN: "إيراد آخر",
-    CAPITAL_IN: "إيداع رأس مال",
-    OWNER_DRAW_OUT: "مسحوبات شخصية",
-  };
-  return map[t] || t;
 }

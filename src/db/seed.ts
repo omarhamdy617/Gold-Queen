@@ -79,6 +79,21 @@ async function main() {
     if (!existing) await db.insert(schema.locations).values(loc);
   }
 
+  // 5.5) مصادر الأوردر الافتراضية - بنفس الأكواد الثابتة اللي اتعملت في الإنتاج (migration الدفعة 15).
+  // كانت ناقصة من هنا خالص: أي تركيب جديد للسيستم (نسخة لعميل جديد مثلًا) كان هيبدأ من غير ولا مصدر،
+  // وأول فاتورة كانت هتفشل لأن عمود المصدر مربوط بالجدول ده وقيمته الافتراضية 'other'.
+  const defaultSources = [
+    { id: "website", name: "الموقع" },
+    { id: "phone", name: "تليفون" },
+    { id: "whatsapp", name: "واتساب" },
+    { id: "facebook", name: "فيسبوك" },
+    { id: "other", name: "أخرى" },
+  ];
+  for (const src of defaultSources) {
+    const [existing] = await db.select().from(schema.orderSources).where(eq(schema.orderSources.id, src.id));
+    if (!existing) await db.insert(schema.orderSources).values(src);
+  }
+
   // 6) الإعدادات الافتراضية
   const [existingSettings] = await db.select().from(schema.settings);
   if (!existingSettings) {

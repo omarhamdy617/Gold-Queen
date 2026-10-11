@@ -158,7 +158,7 @@ export const cashTransactions = pgTable(
     createdById: text("created_by_id").references(() => users.id),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (t) => [index("cashtx_drawer_idx").on(t.drawerId)]
+  (t) => [index("cashtx_drawer_idx").on(t.drawerId), index("cashtx_created_idx").on(t.createdAt)]
 );
 
 // --------------------------------------------------------------------------
@@ -298,7 +298,7 @@ export const purchases = pgTable("purchases", {
     .notNull()
     .references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [index("purchases_created_idx").on(t.createdAt), index("purchases_supplier_idx").on(t.supplierId)]);
 
 export const supplierPayments = pgTable("supplier_payments", {
   id: cuid(),
@@ -327,7 +327,7 @@ export const purchaseItems = pgTable("purchase_items", {
     .references(() => products.id),
   quantity: integer("quantity").notNull(),
   unitCost: money("unit_cost").notNull(),
-});
+}, (t) => [index("purchase_items_purchase_idx").on(t.purchaseId), index("purchase_items_product_idx").on(t.productId)]);
 
 // --------------------------------------------------------------------------
 // STOCK TRANSFERS
@@ -373,7 +373,7 @@ export const customers = pgTable("customers", {
   notes: text("notes"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [index("customers_created_idx").on(t.createdAt)]);
 
 export const collections = pgTable("collections", {
   id: cuid(),
@@ -389,7 +389,7 @@ export const collections = pgTable("collections", {
     .notNull()
     .references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [index("collections_created_idx").on(t.createdAt), index("collections_customer_idx").on(t.customerId)]);
 
 export const consignments = pgTable("consignments", {
   id: cuid(),
@@ -480,7 +480,7 @@ export const salesInvoices = pgTable("sales_invoices", {
   // أو محاسب هو اللي سجّل عملية التسوية. ده اللي بيتحسب عليه "أداء الموظفين" في لوحة التحكم.
   soldById: text("sold_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [index("sales_invoices_created_idx").on(t.createdAt), index("sales_invoices_customer_idx").on(t.customerId), index("sales_invoices_source_idx").on(t.source)]);
 
 export const salesInvoiceItems = pgTable("sales_invoice_items", {
   id: cuid(),
@@ -493,7 +493,7 @@ export const salesInvoiceItems = pgTable("sales_invoice_items", {
   quantity: integer("quantity").notNull(),
   unitPrice: money("unit_price").notNull(),
   unitCost: money("unit_cost").notNull(),
-});
+}, (t) => [index("sales_invoice_items_invoice_idx").on(t.invoiceId), index("sales_invoice_items_product_idx").on(t.productId)]);
 
 // --------------------------------------------------------------------------
 // QUOTES
@@ -607,7 +607,7 @@ export const orders = pgTable("orders", {
   assignedAt: timestamp("assigned_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => [index("orders_created_idx").on(t.createdAt), index("orders_status_idx").on(t.status), index("orders_customer_idx").on(t.customerId)]);
 
 export const orderItems = pgTable("order_items", {
   id: cuid(),
@@ -620,7 +620,7 @@ export const orderItems = pgTable("order_items", {
   quantity: integer("quantity").notNull(),
   // سعر الوحدة وقت تسجيل الأوردر - بيتكتب يدويًا (مش سعر المنتج المسجل تلقائيًا)
   unitPrice: money("unit_price").notNull().default("0"),
-});
+}, (t) => [index("order_items_order_idx").on(t.orderId)]);
 
 // --------------------------------------------------------------------------
 // RETURNS
@@ -641,7 +641,7 @@ export const returnRequests = pgTable("return_requests", {
   approvedById: text("approved_by_id").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [index("return_requests_status_idx").on(t.status), index("return_requests_approved_idx").on(t.approvedAt), index("return_requests_invoice_idx").on(t.invoiceId)]);
 
 export const returnItems = pgTable("return_items", {
   id: cuid(),
@@ -654,7 +654,7 @@ export const returnItems = pgTable("return_items", {
     .references(() => products.id),
   quantity: integer("quantity").notNull(),
   unitPrice: money("unit_price").notNull(),
-});
+}, (t) => [index("return_items_request_idx").on(t.returnRequestId)]);
 
 // --------------------------------------------------------------------------
 // EXPENSES
@@ -674,11 +674,14 @@ export const expenses = pgTable("expenses", {
     .notNull()
     .references(() => paymentMethods.id),
   note: text("note"),
+  // قناة الإعلان (اختياري) - لو المصروف ده إعلان، بيتحدد على أنهي مصدر أوردر اتصرف (فيسبوك، تيك توك...)
+  // عشان لوحة التحليلات تحسب ROAS وربح كل قناة بعد مصاريف إعلاناتها. فاضي = مصروف عادي مش إعلان.
+  adSourceId: text("ad_source_id").references(() => orderSources.id),
   createdById: text("created_by_id")
     .notNull()
     .references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [index("expenses_created_idx").on(t.createdAt), index("expenses_ad_source_idx").on(t.adSourceId)]);
 
 // --------------------------------------------------------------------------
 // الإيرادات - أي إيراد داخل الشركة مش ناتج من بيع أو تحصيل أوردر أو تحصيل من عميل/تاجر (اللي كل
@@ -704,7 +707,7 @@ export const income = pgTable("income", {
     .notNull()
     .references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => [index("income_created_idx").on(t.createdAt)]);
 
 // --------------------------------------------------------------------------
 // رأس المال والمسحوبات - فلوس صاحب الشغل الداخلة (رأس مال) والخارجة لنفسه (مسحوبات). جدول منفصل
@@ -778,8 +781,7 @@ export const auditLogs = pgTable(
   },
   (t) => [
     index("audit_entity_idx").on(t.entityType, t.entityId),
-    index("audit_user_idx").on(t.userId),
-  ]
+    index("audit_user_idx").on(t.userId), index("audit_created_idx").on(t.createdAt)]
 );
 
 // --------------------------------------------------------------------------

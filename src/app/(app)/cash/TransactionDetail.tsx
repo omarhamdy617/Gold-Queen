@@ -2,25 +2,9 @@
 import { useState, useTransition } from "react";
 import { getCashTransaction } from "@/actions/cash";
 import { money, dateAr } from "@/lib/format";
+import { CASH_TX_LABELS } from "@/lib/cashTypes";
 
-const TYPE_LABELS: Record<string, string> = {
-  SALE_IN: "تحصيل بيع",
-  PURCHASE_OUT: "دفع مشتريات",
-  EXPENSE_OUT: "مصروف",
-  COLLECTION_IN: "تحصيل من تاجر",
-  PAYMENT_OUT: "دفع لمورد",
-  RETURN_OUT: "استرداد للعميل",
-  RETURN_IN: "استرداد من مورد",
-  ADJUSTMENT: "تسوية يدوية",
-  TRANSFER_IN: "تحويل داخل",
-  TRANSFER_OUT: "تحويل خارج",
-  LOAN_OUT: "سلفة/سداد (خارج)",
-  LOAN_IN: "سلفة/تحصيل (داخل)",
-  ORDER_DEPOSIT_IN: "عربون أوردر",
-  OTHER_INCOME_IN: "إيراد آخر",
-  CAPITAL_IN: "إيداع رأس مال",
-  OWNER_DRAW_OUT: "مسحوبات شخصية",
-};
+const TYPE_LABELS = CASH_TX_LABELS;
 
 export default function TransactionDetail({ id, label }: { id: string; label: string }) {
   const [open, setOpen] = useState(false);

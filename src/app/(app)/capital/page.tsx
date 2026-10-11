@@ -1,23 +1,9 @@
 import { getCapitalPageData } from "@/actions/capital";
 import { money, dateAr } from "@/lib/format";
-import { cairoStartOfDay, cairoStartOfMonth } from "@/lib/time";
+import { cairoDayRange, cairoYmd } from "@/lib/time";
+import ExcelExportForm from "@/components/ExcelExportForm";
 import CapitalForm from "./CapitalForm";
 import CapitalRowActions from "./CapitalRowActions";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-const isDateParam = (v?: string) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
-
-// "YYYY-MM-DD" بيتفسّر كيوم بتوقيت القاهرة (مش UTC) - الظهر UTC لنفس التاريخ دايمًا بيقع في نفس اليوم
-// في القاهرة، فـ cairoStartOfDay بيرجع بداية اليوم الصح من غير ما حركة حصلت بعد نص الليل بساعة تقع برا الفترة.
-function cairoDayStart(ymd: string) {
-  return cairoStartOfDay(new Date(ymd + "T12:00:00Z"));
-}
-function cairoDayEnd(ymd: string) {
-  return new Date(cairoStartOfDay(new Date(new Date(ymd + "T12:00:00Z").getTime() + DAY_MS)).getTime() - 1);
-}
-function cairoYmd(d: Date) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
-}
 
 function Row({ label, value, tone }: { label: string; value: string; tone?: "green" | "red" }) {
   return (
@@ -36,8 +22,7 @@ function Verdict({ ok, children }: { ok: boolean; children: React.ReactNode }) {
 
 export default async function CapitalPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
   const { from, to } = await searchParams;
-  const fromDate = isDateParam(from) ? cairoDayStart(from!) : cairoStartOfMonth();
-  const toDate = isDateParam(to) ? cairoDayEnd(to!) : new Date();
+  const { from: fromDate, to: toDate } = cairoDayRange(from, to);
 
   const data = await getCapitalPageData(fromDate, toDate);
   const { period, allTime } = data;
@@ -55,6 +40,8 @@ export default async function CapitalPage({ searchParams }: { searchParams: Prom
       </div>
 
       <CapitalForm drawers={data.drawers} />
+
+      <ExcelExportForm action="/api/export/finance" label="تنزيل Excel (رأس المال والمسحوبات وباقي الحسابات)" />
 
       <form className="flex gap-2 items-end flex-wrap app-card p-4">
         <div>

@@ -28,6 +28,9 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
           <Link href="/products/by-location" className="text-sm text-primary hover:underline">
             المخزون حسب المكان ←
           </Link>
+          <a href="/api/export/inventory" className="text-sm text-green-800 font-semibold hover:underline">
+            تنزيل المخزون Excel
+          </a>
           <Link href="/products/barcode" className="text-sm text-gold hover:underline">
             طباعة ملصقات باركود ←
           </Link>

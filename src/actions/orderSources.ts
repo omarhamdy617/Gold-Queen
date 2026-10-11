@@ -70,6 +70,10 @@ export async function deleteOrderSource(id: string) {
     if (invRow) throw new Error("متقدرش تمسح المصدر ده - مرتبط بفواتير بيع سابقة. استخدم زرار التعطيل بدل الحذف عشان تحافظ على سجل الفواتير القديمة.");
     const [ordRow] = await db.select({ id: schema.orders.id }).from(schema.orders).where(eq(schema.orders.source, id)).limit(1);
     if (ordRow) throw new Error("متقدرش تمسح المصدر ده - مرتبط بأوردرات سابقة. استخدم زرار التعطيل بدل الحذف.");
+    // المصدر ممكن يكون متحدد عليه مصاريف إعلانات (عمود ad_source_id في المصروفات) - من غير الفحص ده
+    // قيد الـforeign key كان هيرفض الحذف برسالة عامة مش مفهومة
+    const [expRow] = await db.select({ id: schema.expenses.id }).from(schema.expenses).where(eq(schema.expenses.adSourceId, id)).limit(1);
+    if (expRow) throw new Error("متقدرش تمسح المصدر ده - متسجل عليه مصاريف إعلانات. استخدم زرار التعطيل بدل الحذف.");
     await db.delete(schema.orderSources).where(eq(schema.orderSources.id, id));
     revalidatePath("/settings");
   } catch (e) {

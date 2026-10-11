@@ -1,3 +1,4 @@
+import ExcelExportForm from "@/components/ExcelExportForm";
 import { listInvoices } from "@/actions/sales";
 import { listAllOrderSources } from "@/actions/orderSources";
 import { money, dateAr } from "@/lib/format";
@@ -19,6 +20,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
         <h1 className="text-xl font-bold">الفواتير</h1>
         <Link href="/sales/new" className="bg-gold text-white rounded-lg px-4 py-2 text-sm">+ فاتورة جديدة</Link>
       </div>
+      <ExcelExportForm action="/api/export/sales" label="تنزيل الفواتير Excel" />
       <InvoiceSearchBox initialQuery={q || ""} />
       <div className="bg-white rounded-xl shadow overflow-x-auto">
         <table className="w-full text-sm text-right">

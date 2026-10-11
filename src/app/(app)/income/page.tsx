@@ -1,3 +1,4 @@
+import ExcelExportForm from "@/components/ExcelExportForm";
 import { listIncome, listIncomeCategories } from "@/actions/income";
 import { listPaymentMethods } from "@/actions/cash";
 import { money, dateAr } from "@/lib/format";
@@ -13,6 +14,7 @@ export default async function IncomePage() {
         <h1 className="text-xl font-bold">الإيرادات</h1>
         <div className="bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-bold">إجمالي: {money(total)}</div>
       </div>
+      <ExcelExportForm action="/api/export/finance" label="تنزيل Excel (المصروفات والإيرادات والخزائن)" />
       <p className="text-xs text-muted bg-neutral-50 border rounded-lg px-3 py-2">
         سجّل هنا أي إيراد مش ناتج عن فاتورة بيع أو أوردر أو تحصيل من عميل/تاجر - زي عمولة، عربون من غير أوردر مسجّل، أو أي دخل متفرق تاني. كل عملية هنا بتدخل الخزينة اللي تحددها فورًا.
       </p>

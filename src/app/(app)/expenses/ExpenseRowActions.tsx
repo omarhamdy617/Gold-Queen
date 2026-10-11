@@ -6,7 +6,7 @@ import { isActionError } from "@/lib/actionError";
 import { friendlyErrorMessage } from "@/lib/errors";
 
 // قبل كده مفيش أي طريقة تعدّل أو تمسح مصروف اتسجل غلط - غير تسوية خزينة يدوية منفصلة عن المصروف نفسه.
-export default function ExpenseRowActions({ expense, categories, paymentMethods }: { expense: any; categories: any[]; paymentMethods: any[] }) {
+export default function ExpenseRowActions({ expense, categories, paymentMethods, orderSources }: { expense: any; categories: any[]; paymentMethods: any[]; orderSources: any[] }) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -15,6 +15,7 @@ export default function ExpenseRowActions({ expense, categories, paymentMethods 
     amount: String(expense.amount),
     paymentMethodId: expense.paymentMethodId,
     note: expense.note || "",
+    adSourceId: expense.adSourceId || "",
   });
   const [error, setError] = useState("");
 
@@ -29,13 +30,17 @@ export default function ExpenseRowActions({ expense, categories, paymentMethods 
           {paymentMethods.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
         </select>
         <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="border rounded px-2 py-1 text-xs" placeholder="ملاحظة" />
+        <select value={form.adSourceId} onChange={(e) => setForm({ ...form, adSourceId: e.target.value })} className="border rounded px-2 py-1 text-xs" aria-label="قناة الإعلان">
+          <option value="">مش إعلان</option>
+          {orderSources.filter((s: any) => s.active || s.id === expense.adSourceId).map((s: any) => <option key={s.id} value={s.id}>إعلان: {s.name}</option>)}
+        </select>
         <button
           disabled={pending}
           onClick={() =>
             start(async () => {
               setError("");
               try {
-                const r = await updateExpense(expense.id, { categoryId: form.categoryId, amount: parseFloat(form.amount), paymentMethodId: form.paymentMethodId, note: form.note });
+                const r = await updateExpense(expense.id, { categoryId: form.categoryId, amount: parseFloat(form.amount), paymentMethodId: form.paymentMethodId, note: form.note, adSourceId: form.adSourceId || null });
                 if (isActionError(r)) { setError(r.error); return; }
                 setOpen(false);
                 router.refresh();

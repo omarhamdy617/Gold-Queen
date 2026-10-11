@@ -43,7 +43,7 @@ async function deleteExpenseCategoryInner(id: string) {
   return deleted;
 }
 
-export async function createExpense(input: { categoryId: string; amount: number; paymentMethodId: string; note?: string }) {
+export async function createExpense(input: { categoryId: string; amount: number; paymentMethodId: string; note?: string; adSourceId?: string | null }) {
   try {
     return await createExpenseInner(input);
   } catch (e) {
@@ -62,7 +62,7 @@ async function createExpenseInner(input: Parameters<typeof createExpense>[0]) {
   const result = await db.transaction(async (tx) => {
     const [exp] = await tx
       .insert(schema.expenses)
-      .values({ categoryId: input.categoryId, amount: input.amount.toFixed(2), paymentMethodId: input.paymentMethodId, note: input.note, createdById: session.userId })
+      .values({ categoryId: input.categoryId, amount: input.amount.toFixed(2), paymentMethodId: input.paymentMethodId, note: input.note, adSourceId: input.adSourceId || null, createdById: session.userId })
       .returning();
     await postCashByPaymentMethod(tx, input.paymentMethodId, "EXPENSE_OUT", input.amount, {
       note: input.note || "مصروف",
@@ -81,7 +81,7 @@ async function createExpenseInner(input: Parameters<typeof createExpense>[0]) {
 // تعديل مصروف مسجل قبل كده - قبل كده مفيش أي طريقة تصحح بيها غلطة بسيطة في مبلغ/فئة مصروف غير
 // تسوية خزينة يدوية منفصلة، وده كان بيسيب أثرين مش مترابطين في السجلات بدل تصحيح واحد واضح.
 // التعديل هنا بيعكس أثر المبلغ القديم في الخزينة ويطبق الجديد بدل ما يسيب أثرين منفصلين.
-export async function updateExpense(id: string, input: { categoryId: string; amount: number; paymentMethodId: string; note?: string }) {
+export async function updateExpense(id: string, input: { categoryId: string; amount: number; paymentMethodId: string; note?: string; adSourceId?: string | null }) {
   try {
     return await updateExpenseInner(id, input);
   } catch (e) {
@@ -119,7 +119,7 @@ async function updateExpenseInner(id: string, input: Parameters<typeof updateExp
     });
     const [updated] = await tx
       .update(schema.expenses)
-      .set({ categoryId: input.categoryId, amount: input.amount.toFixed(2), paymentMethodId: input.paymentMethodId, note: input.note })
+      .set({ categoryId: input.categoryId, amount: input.amount.toFixed(2), paymentMethodId: input.paymentMethodId, note: input.note, adSourceId: input.adSourceId || null })
       .where(eq(schema.expenses.id, id))
       .returning();
     return { before: existing, after: updated };
@@ -173,10 +173,13 @@ export async function listExpenses() {
       categoryName: schema.expenseCategories.name,
       paymentMethodId: schema.expenses.paymentMethodId,
       paymentMethodName: schema.paymentMethods.name,
+      adSourceId: schema.expenses.adSourceId,
+      adSourceName: schema.orderSources.name,
     })
     .from(schema.expenses)
     .innerJoin(schema.expenseCategories, eq(schema.expenses.categoryId, schema.expenseCategories.id))
     .innerJoin(schema.paymentMethods, eq(schema.expenses.paymentMethodId, schema.paymentMethods.id))
+    .leftJoin(schema.orderSources, eq(schema.expenses.adSourceId, schema.orderSources.id))
     .orderBy(desc(schema.expenses.createdAt));
   return rows;
 }

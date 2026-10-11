@@ -1,5 +1,6 @@
 import { getProfitSummary, getProfitBreakdownByProduct, getMonthlyPerformance } from "@/actions/reports";
 import { money, num } from "@/lib/format";
+import { cairoDayRange, cairoYmd } from "@/lib/time";
 
 function SummaryCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
@@ -47,8 +48,9 @@ function ProfitTrendChart({ data }: { data: { label: string; netProfit: number }
 
 export default async function ProfitPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
   const { from, to } = await searchParams;
-  const toDate = to ? new Date(to + "T23:59:59") : new Date();
-  const fromDate = from ? new Date(from) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  // بتوقيت القاهرة (نفس تفسير ملف Excel بالظبط) - قبل كده التاريخ كان بيتفسّر UTC، فحركات أول ساعتين
+  // تلاتة من اليوم بتوقيت مصر كانت بتقع برا الفترة، وافتراضي "أول الشهر" كان بتوقيت السيرفر مش القاهرة.
+  const { from: fromDate, to: toDate } = cairoDayRange(from, to);
 
   const [summary, byProduct, monthly] = await Promise.all([
     getProfitSummary(fromDate, toDate),
@@ -68,13 +70,19 @@ export default async function ProfitPage({ searchParams }: { searchParams: Promi
       <form className="flex gap-2 items-end flex-wrap app-card p-4">
         <div>
           <label className="text-xs text-muted block mb-0.5">من</label>
-          <input type="date" name="from" defaultValue={fromDate.toISOString().slice(0, 10)} className="border rounded px-3 py-2 text-sm" />
+          <input type="date" name="from" defaultValue={cairoYmd(fromDate)} className="border rounded px-3 py-2 text-sm" />
         </div>
         <div>
           <label className="text-xs text-muted block mb-0.5">إلى</label>
-          <input type="date" name="to" defaultValue={toDate.toISOString().slice(0, 10)} className="border rounded px-3 py-2 text-sm" />
+          <input type="date" name="to" defaultValue={cairoYmd(toDate)} className="border rounded px-3 py-2 text-sm" />
         </div>
         <button className="bg-gold text-white rounded-lg px-4 py-2 text-sm">تحديث</button>
+        <a
+          href={`/api/export/profit?from=${cairoYmd(fromDate)}&to=${cairoYmd(toDate)}`}
+          className="border border-green-700 text-green-800 rounded-lg px-4 py-2 text-sm font-semibold hover:bg-green-50"
+        >
+          تنزيل Excel للفترة دي
+        </a>
       </form>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">

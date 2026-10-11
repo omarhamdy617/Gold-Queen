@@ -1,6 +1,7 @@
 import { getOrder, getRevertPreviewStatus } from "@/actions/orders";
 import { listProductsWithStock } from "@/actions/products";
 import { listPaymentMethods } from "@/actions/cash";
+import { listAllOrderSources } from "@/actions/orderSources";
 import { money, dateAr } from "@/lib/format";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -37,6 +38,11 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const canEditDetails = canManage && !["DELIVERED", "RETURNED", "CANCELLED"].includes(order.status);
   const products = canEditDetails ? await listProductsWithStock() : [];
   const paymentMethods = canEditDetails ? await listPaymentMethods() : [];
+  // مصادر الأوردر من قاعدة البيانات (نفس شاشة تسجيل الأوردر) - المفعّلة بس، + مصدر الأوردر الحالي حتى لو
+  // اتعطّل بعد كده عشان التعديل ميغيّروش من غير قصد.
+  const orderSources = canEditDetails
+    ? (await listAllOrderSources()).filter((s) => s.active || s.id === data.order.source)
+    : [];
   const revertToStatus = isAdmin ? await getRevertPreviewStatus(id) : null;
 
   return (
@@ -55,7 +61,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         </div>
       </div>
 
-      {canEditDetails && <OrderEditForm orderId={id} products={products} order={order} items={items} paymentMethods={paymentMethods} />}
+      {canEditDetails && <OrderEditForm orderId={id} products={products} order={order} items={items} paymentMethods={paymentMethods} orderSources={orderSources} />}
 
       <div className="app-card p-4 space-y-3 print:shadow-none">
         <PrintHeader subtitle={`تفاصيل أوردر - ${LABELS[order.status]}`} code={order.code} date={dateAr(order.createdAt)} />

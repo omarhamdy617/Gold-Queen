@@ -283,8 +283,15 @@ async function approveReturnInner(id: string, locationId: string, refundPaymentM
       throw new Error("لازم تختار طريقة الدفع اللي هيترد بيها الجزء النقدي من المرتجع");
     }
 
-    if (ret.kind === "SALE_RETURN" && ret.customerId) {
+    // الجزء النقدي بيترد من الخزينة سواء الفاتورة لعميل مسجّل أو لعميل نقدي من غير حساب. قبل كده الرد
+    // النقدي كان جوه شرط "لو فيه عميل" بس، فمرتجع فاتورة عميل نقدي (اللي بيتلاقي بكود الفاتورة) كان
+    // بيتعتمد والبضاعة بترجع المخزن، بس الفلوس اللي اترجعت للعميل مكانتش بتتخصم من الخزينة خالص -
+    // فرصيد الخزينة في السيستم بيبقى أكبر من الحقيقي. اتكشف بالاختبارات التلقائية (الدفعة 28).
+    if (ret.kind === "SALE_RETURN") {
       if (balancePortion > 0) {
+        if (!ret.customerId) {
+          throw new Error("الفاتورة دي لعميل نقدي من غير حساب مسجّل، فمفيش حساب يتسجل عليه جزء من المرتجع كرصيد - رد قيمة المرتجع كلها كاش.");
+        }
         await updateCustomerBalance(tx, ret.customerId, -balancePortion);
       }
       if (cashPortion > 0 && refundPaymentMethodId) {
@@ -296,9 +303,10 @@ async function approveReturnInner(id: string, locationId: string, refundPaymentM
         });
       }
     }
-    if (ret.kind === "PURCHASE_RETURN" && ret.supplierId) {
+    if (ret.kind === "PURCHASE_RETURN") {
       // بيقل اللي علينا للمورد بمقدار الجزء اللي مخصوم من رصيده
       if (balancePortion > 0) {
+        if (!ret.supplierId) throw new Error("المرتجع ده مش مربوط بمورد، فمفيش رصيد يتخصم منه - سجّل قيمة المرتجع كلها كاش.");
         await updateSupplierBalance(tx, ret.supplierId, -balancePortion);
       }
       if (cashPortion > 0 && refundPaymentMethodId) {

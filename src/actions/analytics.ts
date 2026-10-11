@@ -662,10 +662,67 @@ export async function getEmployeesAnalytics(periodKey: PeriodKey, customFrom?: s
 export async function getMarketingAnalytics(periodKey: PeriodKey, customFrom?: string, customTo?: string) {
   try {
     const { from, to, prevFrom, prevTo } = await period(periodKey, customFrom, customTo);
-    const byChannel = await revenueByChannel(from, to, prevFrom, prevTo);
+    const revenue = await revenueByChannel(from, to, prevFrom, prevTo);
+
+    // مصاريف الإعلانات لكل قناة = المصروفات اللي متحدد عليها "قناة الإعلان" (ad_source_id) في الفترة
+    const adRows = await db
+      .select({
+        sourceId: schema.expenses.adSourceId,
+        sourceName: schema.orderSources.name,
+        spend: sql<string>`coalesce(sum(${schema.expenses.amount}), 0)`,
+      })
+      .from(schema.expenses)
+      .innerJoin(schema.orderSources, eq(schema.expenses.adSourceId, schema.orderSources.id))
+      .where(and(gte(schema.expenses.createdAt, from), lte(schema.expenses.createdAt, to)))
+      .groupBy(schema.expenses.adSourceId, schema.orderSources.name);
+
+    // هامش الربح لكل قناة (سعر البيع - تكلفة الوحدة) قبل المرتجعات - عشان ROAS لوحده ممكن يضلل:
+    // قناة ROAS بتاعها 3 ممكن تكون خسرانة لو هامش الربح على المنتجات اللي بتتباع منها 25% بس.
+    const gpRows = await db
+      .select({
+        sourceId: schema.salesInvoices.source,
+        profit: sql<string>`coalesce(sum((${schema.salesInvoiceItems.unitPrice} - ${schema.salesInvoiceItems.unitCost}) * ${schema.salesInvoiceItems.quantity}), 0)`,
+      })
+      .from(schema.salesInvoiceItems)
+      .innerJoin(schema.salesInvoices, eq(schema.salesInvoiceItems.invoiceId, schema.salesInvoices.id))
+      .where(and(gte(schema.salesInvoices.createdAt, from), lte(schema.salesInvoices.createdAt, to)))
+      .groupBy(schema.salesInvoices.source);
+
+    const spendMap = new Map(adRows.map((r) => [r.sourceId as string, Number(r.spend)]));
+    const gpMap = new Map(gpRows.map((r) => [r.sourceId, Number(r.profit)]));
+
+    // القنوات اللي اتصرف عليها إعلانات من غير ولا مبيعة في الفترة لازم تظهر برضه (ROAS صفر) - دي بالظبط
+    // القنوات اللي محتاج تشوفها
+    const byChannel = revenue.map((c) => {
+      const adSpend = spendMap.get(c.sourceId) || 0;
+      const grossProfit = gpMap.get(c.sourceId) || 0;
+      return { ...c, adSpend, grossProfit, roas: adSpend > 0 ? c.current / adSpend : null, profitAfterAds: grossProfit - adSpend };
+    });
+    for (const r of adRows) {
+      if (!byChannel.some((c) => c.sourceId === r.sourceId)) {
+        const adSpend = Number(r.spend);
+        byChannel.push({
+          sourceId: r.sourceId as string,
+          sourceName: r.sourceName,
+          current: 0,
+          currentCount: 0,
+          previous: 0,
+          changePct: null,
+          adSpend,
+          grossProfit: 0,
+          roas: 0,
+          profitAfterAds: -adSpend,
+        });
+      }
+    }
+
+    const totalAdSpend = adRows.reduce((s, r) => s + Number(r.spend), 0);
+    const paidRevenue = byChannel.filter((c) => c.adSpend > 0).reduce((s, c) => s + c.current, 0);
+
     return {
       byChannel,
-      missingData: "مفيش تتبع لتكلفة الإعلانات، عدد العملاء المحتملين (Leads)، أو تكلفة اكتساب العميل (CAC/ROAS) في السيستم حاليًا - المعروض هنا إيراد المبيعات الفعلي مقسّم حسب مصدر الأوردر بس.",
+      totals: { adSpend: totalAdSpend, paidRevenue, blendedRoas: totalAdSpend > 0 ? paidRevenue / totalAdSpend : null },
+      missingData: "عدد العملاء المحتملين (Leads) لسه مش متتبع في السيستم. الـROAS بيتحسب من المصروفات اللي متحدد عليها قناة إعلان بس، وربح القناة محسوب قبل المرتجعات.",
     };
   } catch (e) {
     return toActionError(e, "تعذر تحميل تحليل التسويق");

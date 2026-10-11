@@ -67,3 +67,24 @@ export function cairoStartOfYear(d = new Date()): Date {
   const localStart = new Date(Date.UTC(local.getUTCFullYear(), 0, 1, 0, 0, 0));
   return new Date(localStart.getTime() - offsetMin * 60000);
 }
+
+// التاريخ بتوقيت القاهرة بصيغة YYYY-MM-DD (لخانات التاريخ في الفلاتر وأسماء ملفات التصدير)
+export function cairoYmd(d: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: CAIRO_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+}
+
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+// فترة من تاريخين بصيغة YYYY-MM-DD (من خانات الفلتر أو رابط التصدير) - كل يوم بيتفسّر بتوقيت القاهرة
+// من أول دقيقة لآخر دقيقة فيه. الظهر UTC لنفس التاريخ دايمًا بيقع في نفس اليوم في القاهرة، فبنبدأ منه.
+// الافتراضي: من أول الشهر الحالي لحد دلوقتي. نفس الدالة دي بتستخدمها الشاشات وملفات Excel، عشان
+// الرقم في الملف يبقى نفس الرقم اللي على الشاشة لنفس الفترة بالظبط.
+export function cairoDayRange(fromYmd?: string | null, toYmd?: string | null): { from: Date; to: Date } {
+  const from = fromYmd && YMD_RE.test(fromYmd) ? cairoStartOfDay(new Date(fromYmd + "T12:00:00Z")) : cairoStartOfMonth();
+  const to =
+    toYmd && YMD_RE.test(toYmd)
+      ? new Date(cairoStartOfDay(new Date(new Date(toYmd + "T12:00:00Z").getTime() + ONE_DAY_MS)).getTime() - 1)
+      : new Date();
+  return { from, to };
+}

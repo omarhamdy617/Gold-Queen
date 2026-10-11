@@ -16,12 +16,14 @@ export default function OrderEditForm({
   order,
   items,
   paymentMethods,
+  orderSources,
 }: {
   orderId: string;
   products: any[];
   order: any;
   items: ExistingItem[];
   paymentMethods: any[];
+  orderSources: { id: string; name: string }[];
 }) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
@@ -33,7 +35,10 @@ export default function OrderEditForm({
   const [customerPhone2, setCustomerPhone2] = useState(order.customerPhone2 || "");
   const [address, setAddress] = useState(order.address || "");
   const [governorate, setGovernorate] = useState(order.governorate || "");
-  const [source, setSource] = useState(order.source || "WEBSITE");
+  // مصادر الأوردر بقت جدول في قاعدة البيانات من الدفعة 15 (أكوادها: website, phone, ... + أي مصدر جديد
+  // زي "تيك توك"). الشاشة دي كانت لسه شايلة القايمة الثابتة القديمة بأكواد كابيتال (WEBSITE...) مش
+  // موجودة في الجدول، فأي تغيير للمصدر كان بيفشل في الحفظ، والمصادر الجديدة مكانتش بتظهر هنا خالص.
+  const [source, setSource] = useState(order.source || orderSources[0]?.id || "");
   const [orderNotes, setOrderNotes] = useState(order.orderNotes || "");
   const [deliveryNotes, setDeliveryNotes] = useState(order.deliveryNotes || "");
   const [prepaidAmount, setPrepaidAmount] = useState(String(order.prepaidAmount ?? "0"));
@@ -140,7 +145,9 @@ export default function OrderEditForm({
           <div>
             <label className="text-xs text-muted">مصدر الأوردر</label>
             <select value={source} onChange={(e) => setSource(e.target.value)} className="border rounded px-3 py-2 text-sm w-full mt-1">
-              <option value="WEBSITE">الموقع</option><option value="PHONE">تليفون</option><option value="WHATSAPP">واتساب</option><option value="FACEBOOK">فيسبوك</option><option value="OTHER">أخرى</option>
+              {orderSources.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
             </select>
           </div>
         </div>
