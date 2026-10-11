@@ -9,8 +9,10 @@ import { cairoStartOfMonth } from "@/lib/time";
 // ومحدش يتلخبط إنه شايف رقمين مختلفين لنفس الفترة:
 //   إجمالي الربح = مجموع (سعر البيع - تكلفة الوحدة وقت البيع) × الكمية لكل بنود الفواتير في الفترة
 //                  ناقص نفس الحساب لأي بنود اتباعت وارتجعت (مرتجع بيع معتمد) في نفس الفترة
-//   صافي الربح   = إجمالي الربح - كل المصروفات المسجلة في نفس الفترة
-// وده رياضيًا نفس "إجمالي المبيعات - تكلفة البضاعة المباعة - المصروفات" بالظبط.
+//   صافي الربح   = إجمالي الربح - كل المصروفات المسجلة في نفس الفترة + الإيرادات الأخرى (شاشة "الإيرادات")
+// وده رياضيًا نفس "إجمالي المبيعات - تكلفة البضاعة المباعة - المصروفات + الإيرادات الأخرى" بالظبط.
+// الإيرادات الأخرى كانت ناقصة من المعادلة دي من ساعة ما شاشة الإيرادات اتعملت (الدفعة 23) - يعني أي عمولة
+// أو دخل متفرق كان بيدخل الخزينة بس مش بيظهر في الربح. رأس المال والمسحوبات برا المعادلة عمدًا (مش ربح ولا تكلفة).
 export async function getProfitSummary(from: Date, to: Date) {
   await requirePermission("reports.view");
 
@@ -53,7 +55,13 @@ export async function getProfitSummary(from: Date, to: Date) {
     .where(and(gte(schema.expenses.createdAt, from), lte(schema.expenses.createdAt, to)));
   const expensesTotal = Number(expensesRows[0]?.total || 0);
 
-  return { salesTotal, grossProfit, expensesTotal, netProfit: grossProfit - expensesTotal };
+  const otherIncomeRows = await db
+    .select({ total: sql<string>`coalesce(sum(${schema.income.amount}), 0)` })
+    .from(schema.income)
+    .where(and(gte(schema.income.createdAt, from), lte(schema.income.createdAt, to)));
+  const otherIncomeTotal = Number(otherIncomeRows[0]?.total || 0);
+
+  return { salesTotal, grossProfit, expensesTotal, otherIncomeTotal, netProfit: grossProfit - expensesTotal + otherIncomeTotal };
 }
 
 // ربح كل فترة مقسّم على مستوى المنتج - عشان تعرف مش بس "الربح كام" لكن "جاي منين بالظبط"
@@ -189,6 +197,10 @@ export async function getMonthlyPerformance(monthsBack = 12) {
     .select({ amount: schema.expenses.amount, createdAt: schema.expenses.createdAt })
     .from(schema.expenses)
     .where(and(gte(schema.expenses.createdAt, overallStart), lte(schema.expenses.createdAt, overallEnd)));
+  const otherIncomeRows = await db
+    .select({ amount: schema.income.amount, createdAt: schema.income.createdAt })
+    .from(schema.income)
+    .where(and(gte(schema.income.createdAt, overallStart), lte(schema.income.createdAt, overallEnd)));
 
   const salesTotals = new Array(monthsBack).fill(0);
   for (const r of salesRows) {
@@ -213,11 +225,18 @@ export async function getMonthlyPerformance(monthsBack = 12) {
     if (idx >= 0) expensesTotals[idx] += Number(r.amount);
   }
 
+  const otherIncomeTotals = new Array(monthsBack).fill(0);
+  for (const r of otherIncomeRows) {
+    const idx = bucketIndex(new Date(r.createdAt));
+    if (idx >= 0) otherIncomeTotals[idx] += Number(r.amount);
+  }
+
   return ranges.map((r, i) => ({
     label: r.label,
     salesTotal: salesTotals[i],
     grossProfit: grossProfits[i],
     expensesTotal: expensesTotals[i],
-    netProfit: grossProfits[i] - expensesTotals[i],
+    otherIncomeTotal: otherIncomeTotals[i],
+    netProfit: grossProfits[i] - expensesTotals[i] + otherIncomeTotals[i],
   }));
 }

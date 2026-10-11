@@ -18,6 +18,8 @@ const TYPE_LABELS: Record<string, string> = {
   LOAN_IN: "سلفة/تحصيل (داخل)",
   ORDER_DEPOSIT_IN: "عربون أوردر",
   OTHER_INCOME_IN: "إيراد آخر",
+  CAPITAL_IN: "إيداع رأس مال",
+  OWNER_DRAW_OUT: "مسحوبات شخصية",
 };
 
 export default function TransactionDetail({ id, label }: { id: string; label: string }) {

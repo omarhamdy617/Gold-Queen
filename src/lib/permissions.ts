@@ -90,6 +90,12 @@ export const PERMISSION_GROUPS: { group: string; perms: { key: string; label: st
     perms: [{ key: "income.manage", label: "تسجيل الإيرادات الأخرى" }],
   },
   {
+    group: "رأس المال والمسحوبات",
+    // صلاحية حساسة (فلوس صاحب الشغل الشخصية) - مش مضافة لأي دور افتراضي، الأدمن بس عنده تلقائيًا،
+    // وتقدر تضيفها لأي حد تاني صراحةً من شاشة "المستخدمون والصلاحيات".
+    perms: [{ key: "capital.manage", label: "تسجيل وعرض رأس المال والمسحوبات الشخصية" }],
+  },
+  {
     group: "التقارير والوضع المالي",
     perms: [
       { key: "reports.view", label: "عرض التقارير" },

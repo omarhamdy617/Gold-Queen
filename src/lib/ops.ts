@@ -27,7 +27,7 @@ export async function postCashByPaymentMethod(
 
   const isOut = opts.direction
     ? opts.direction === "out"
-    : ["PURCHASE_OUT", "EXPENSE_OUT", "PAYMENT_OUT", "RETURN_OUT", "TRANSFER_OUT", "LOAN_OUT"].includes(type);
+    : ["PURCHASE_OUT", "EXPENSE_OUT", "PAYMENT_OUT", "RETURN_OUT", "TRANSFER_OUT", "LOAN_OUT", "OWNER_DRAW_OUT"].includes(type);
   const signedAmount = isOut ? -amount : amount;
   const newBalance = Number(drawer.balance) + signedAmount;
 

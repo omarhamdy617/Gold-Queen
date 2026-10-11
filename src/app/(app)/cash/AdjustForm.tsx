@@ -1,6 +1,8 @@
 "use client";
 import { useState, useTransition } from "react";
 import { adjustCashDrawer } from "@/actions/cash";
+import { useRouter } from "next/navigation";
+import { isActionError } from "@/lib/actionError";
 import { friendlyErrorMessage } from "@/lib/errors";
 
 export default function CashAdjustForm({ paymentMethodId }: { paymentMethodId: string }) {
@@ -9,6 +11,7 @@ export default function CashAdjustForm({ paymentMethodId }: { paymentMethodId: s
   const [note, setNote] = useState("");
   const [pending, start] = useTransition();
   const [error, setError] = useState("");
+  const router = useRouter();
 
   if (!open)
     return (
@@ -24,10 +27,15 @@ export default function CashAdjustForm({ paymentMethodId }: { paymentMethodId: s
         setError("");
         start(async () => {
           try {
-            await adjustCashDrawer(paymentMethodId, parseFloat(amount), note);
+            const r = await adjustCashDrawer(paymentMethodId, parseFloat(amount), note);
+            if (isActionError(r)) {
+              setError(r.error);
+              return;
+            }
             setOpen(false);
             setAmount("");
             setNote("");
+            router.refresh();
           } catch (err: any) {
             setError(friendlyErrorMessage(err, "تعذر حفظ التسوية - البيانات اللي كتبتها لسه موجودة، جرب تاني"));
           }
@@ -45,11 +53,13 @@ export default function CashAdjustForm({ paymentMethodId }: { paymentMethodId: s
         className="w-full border rounded px-2 py-1 text-sm"
       />
       <input
-        placeholder="السبب"
+        required
+        placeholder="السبب (مطلوب) - مثلًا: فرق جرد"
         value={note}
         onChange={(e) => setNote(e.target.value)}
         className="w-full border rounded px-2 py-1 text-sm"
       />
+      <div className="text-[11px] text-muted">رأس المال والمسحوبات الشخصية ليهم شاشة منفصلة - "رأس المال والمسحوبات" في القائمة.</div>
       {error && <div className="text-red-600 text-[11px]">{error}</div>}
       <div className="flex gap-2">
         <button disabled={pending} className="bg-gold text-white text-xs rounded px-3 py-1">

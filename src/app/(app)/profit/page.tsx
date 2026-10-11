@@ -61,7 +61,7 @@ export default async function ProfitPage({ searchParams }: { searchParams: Promi
       <div>
         <h1 className="text-xl font-bold">الأرباح والأداء</h1>
         <p className="text-xs text-muted mt-1">
-          إجمالي الربح = هامش البيع (سعر البيع - تكلفة الوحدة) بعد خصم أي مرتجعات بيع معتمدة. صافي الربح = إجمالي الربح ناقص كل المصروفات في نفس الفترة - نفس المعادلة بالظبط المستخدمة في كارتي الربح في لوحة التحكم، عشان الأرقام تتطابق دايمًا مهما فتحت الشاشة دي أو الداشبورد.
+          إجمالي الربح = هامش البيع (سعر البيع - تكلفة الوحدة) بعد خصم أي مرتجعات بيع معتمدة. صافي الربح = إجمالي الربح ناقص كل المصروفات زائد الإيرادات الأخرى (شاشة "الإيرادات") في نفس الفترة - نفس المعادلة بالظبط المستخدمة في كارتي الربح في لوحة التحكم، عشان الأرقام تتطابق دايمًا مهما فتحت الشاشة دي أو الداشبورد.
         </p>
       </div>
 
@@ -77,10 +77,11 @@ export default async function ProfitPage({ searchParams }: { searchParams: Promi
         <button className="bg-gold text-white rounded-lg px-4 py-2 text-sm">تحديث</button>
       </form>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <SummaryCard label="إجمالي المبيعات (الفترة المحددة)" value={money(summary.salesTotal)} />
         <SummaryCard label="إجمالي الربح (هامش)" value={money(summary.grossProfit)} accent />
         <SummaryCard label="المصروفات" value={money(summary.expensesTotal)} />
+        <SummaryCard label="إيرادات أخرى" value={money(summary.otherIncomeTotal)} />
         <SummaryCard label="صافي الربح" value={money(summary.netProfit)} accent />
       </div>
 
@@ -94,7 +95,7 @@ export default async function ProfitPage({ searchParams }: { searchParams: Promi
         <h2 className="font-bold text-sm p-4 pb-2">أداء آخر 12 شهر بالتفصيل</h2>
         <table className="w-full text-sm text-right">
           <thead className="border-b text-muted">
-            <tr><th className="p-3">الشهر</th><th>المبيعات</th><th>إجمالي الربح</th><th>المصروفات</th><th>صافي الربح</th></tr>
+            <tr><th className="p-3">الشهر</th><th>المبيعات</th><th>إجمالي الربح</th><th>المصروفات</th><th>إيرادات أخرى</th><th>صافي الربح</th></tr>
           </thead>
           <tbody>
             {monthly.map((m) => (
@@ -103,6 +104,7 @@ export default async function ProfitPage({ searchParams }: { searchParams: Promi
                 <td>{money(m.salesTotal)}</td>
                 <td>{money(m.grossProfit)}</td>
                 <td>{money(m.expensesTotal)}</td>
+                <td>{money(m.otherIncomeTotal)}</td>
                 <td className={m.netProfit >= 0 ? "text-green-700 font-bold" : "text-red-600 font-bold"}>{money(m.netProfit)}</td>
               </tr>
             ))}

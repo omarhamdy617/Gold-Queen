@@ -50,8 +50,14 @@ export async function getDashboardData() {
     .leftJoin(schema.products, eq(schema.returnItems.productId, schema.products.id))
     .where(and(eq(schema.returnRequests.kind, "SALE_RETURN"), eq(schema.returnRequests.status, "APPROVED"), gte(schema.returnRequests.approvedAt, monthStart)));
 
+  // الإيرادات الأخرى (شاشة "الإيرادات") بقت داخلة في صافي الربح - نفس معادلة getProfitSummary بالظبط
+  const otherIncomeMonth = await db
+    .select({ total: sql<string>`coalesce(sum(${schema.income.amount}), 0)` })
+    .from(schema.income)
+    .where(gte(schema.income.createdAt, monthStart));
+
   const grossProfit = Number(grossProfitRows[0]?.profit || 0) - Number(approvedReturnProfitRows[0]?.profit || 0);
-  const netProfit = grossProfit - Number(expensesMonth[0]?.total || 0);
+  const netProfit = grossProfit - Number(expensesMonth[0]?.total || 0) + Number(otherIncomeMonth[0]?.total || 0);
 
   const drawers = await db.select().from(schema.cashDrawers);
   const totalCash = drawers.reduce((s, d) => s + Number(d.balance), 0);

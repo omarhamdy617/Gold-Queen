@@ -102,7 +102,7 @@ export async function getManagementOverview(periodKey: PeriodKey, customFrom?: s
     // واحدة مع بعض، وده كان بياخد أكتر من عدد الاتصالات المتاحة فعليًا لقاعدة البيانات (خصوصًا إن
     // الاتصال بيعدي على مجمّع Supabase - PgBouncer - مش قاعدة البيانات مباشرة، ومساحته أصغر من
     // max:10 المحلي) فكان بيعلّق لحد ما Vercel يقفل الطلب بعد 300 ثانية (504) - نفس فئة عطل 8
-    // سبتمبر بالظبط بس بسبب صفحة مختلفة. عدد الاستعلامات المرسلة لسه ثابت زي ما هو (12) - الفرق إن
+    // سبتمبر بالظبط بس بسبب صفحة مختلفة. عدد الاستعلامات المرسلة لسه ثابت (13 بعد إضافة الإيرادات الأخرى) - الفرق إن
     // كل استعلام بياخد اتصاله ويسيبه قبل ما اللي بعده يبدأ، بدل ما الـ12 يحجزوا اتصال في نفس اللحظة.
     const [salesCmp] = await db
       .select({
@@ -148,6 +148,16 @@ export async function getManagementOverview(periodKey: PeriodKey, customFrom?: s
       })
       .from(schema.expenses)
       .where(and(gte(schema.expenses.createdAt, prevFrom), lte(schema.expenses.createdAt, to)));
+
+    // الإيرادات الأخرى داخلة في صافي الربح (نفس getProfitSummary) - التاريخ جوه الـsql الخام بيتبعت
+    // كنص .toISOString() (درس الدفعة 17)، مش Date خام.
+    const [incomeCmp] = await db
+      .select({
+        curTotal: sql<string>`coalesce(sum(${schema.income.amount}) filter (where ${schema.income.createdAt} >= ${from.toISOString()}), 0)`,
+        prevTotal: sql<string>`coalesce(sum(${schema.income.amount}) filter (where ${schema.income.createdAt} < ${from.toISOString()}), 0)`,
+      })
+      .from(schema.income)
+      .where(and(gte(schema.income.createdAt, prevFrom), lte(schema.income.createdAt, to)));
 
     const expenseCategories = await expensesByCategoryCmp(from, to, prevFrom);
     const customers = await db.select().from(schema.customers);
@@ -220,7 +230,11 @@ export async function getManagementOverview(periodKey: PeriodKey, customFrom?: s
       Number(profitCmp.prevProfit) - Number(returnProfitCmp.prevProfit)
     );
     const expensesTotal = withChange(Number(expenseCmp.curTotal), Number(expenseCmp.prevTotal));
-    const netProfit = withChange(grossProfit.current - expensesTotal.current, grossProfit.previous - expensesTotal.previous);
+    const otherIncome = withChange(Number(incomeCmp.curTotal), Number(incomeCmp.prevTotal));
+    const netProfit = withChange(
+      grossProfit.current - expensesTotal.current + otherIncome.current,
+      grossProfit.previous - expensesTotal.previous + otherIncome.previous
+    );
     const aov = withChange(
       invoiceCount.current > 0 ? revenue.current / invoiceCount.current : 0,
       invoiceCount.previous > 0 ? revenue.previous / invoiceCount.previous : 0
@@ -240,7 +254,7 @@ export async function getManagementOverview(periodKey: PeriodKey, customFrom?: s
         severity: "critical",
         icon: "🔴",
         title: `صافي الربح سالب في ${label}`,
-        detail: `صافي الربح ${netProfit.current.toFixed(2)} ج.م - يعني المصروفات (${expensesTotal.current.toFixed(2)} ج.م) أكلت هامش الربح (${grossProfit.current.toFixed(2)} ج.م) بالكامل وزيادة.`,
+        detail: `صافي الربح ${netProfit.current.toFixed(2)} ج.م - يعني المصروفات (${expensesTotal.current.toFixed(2)} ج.م) أكلت هامش الربح (${grossProfit.current.toFixed(2)} ج.م)${otherIncome.current > 0 ? ` والإيرادات الأخرى (${otherIncome.current.toFixed(2)} ج.م)` : ""} بالكامل وزيادة.`,
         action: "راجع المصروفات الأكبر في الفترة دي وشوف أي بند ممكن يتقلل، أو راجع هامش البيع على المنتجات الأكتر مبيعًا.",
       });
     } else if (netProfit.previous > 0 && pctChange(netProfit.current, netProfit.previous) !== null && (pctChange(netProfit.current, netProfit.previous) as number) <= -20) {
@@ -329,6 +343,7 @@ export async function getManagementOverview(periodKey: PeriodKey, customFrom?: s
         grossProfit,
         netProfit,
         expenses: expensesTotal,
+        otherIncome,
         marginPct,
         cash: totalCash,
         receivable: totalReceivable,
@@ -455,12 +470,23 @@ export async function getFinancialAnalytics(periodKey: PeriodKey, customFrom?: s
       else if (r.type === "ADJUSTMENT") adjustments += v;
     }
 
+    // رأس المال والمسحوبات بيتعرضوا لوحدهم (مش جوه "داخل"/"خارج") - دي فلوس صاحب الشغل نفسه، مش نتيجة
+    // تشغيل. بتتحسب من جدول capital_movements مش من سجل الخزينة، عشان أي حركة اتمسحت لأنها اتسجلت غلط
+    // متفضلش محسوبة هنا (نفس الإجماليات اللي في شاشة "رأس المال والمسحوبات" بالظبط).
+    const capitalRows = await db
+      .select({ kind: schema.capitalMovements.kind, total: sql<string>`coalesce(sum(${schema.capitalMovements.amount}), 0)` })
+      .from(schema.capitalMovements)
+      .where(and(gte(schema.capitalMovements.createdAt, from), lte(schema.capitalMovements.createdAt, to)))
+      .groupBy(schema.capitalMovements.kind);
+    const capitalIn = Number(capitalRows.find((r) => r.kind === "CAPITAL_IN")?.total || 0);
+    const ownerDraws = Number(capitalRows.find((r) => r.kind === "OWNER_DRAW")?.total || 0);
+
     return {
       summary,
       byProduct,
       monthlyTrend: monthly,
       expenseCategories,
-      cashFlow: { in: cashIn, out: cashOut, net: cashIn - cashOut, adjustments },
+      cashFlow: { in: cashIn, out: cashOut, net: cashIn - cashOut, adjustments, capitalIn, ownerDraws },
     };
   } catch (e) {
     return toActionError(e, "تعذر تحميل تحليل الأرباح والوضع المالي");

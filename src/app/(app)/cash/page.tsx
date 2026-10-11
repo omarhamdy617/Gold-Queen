@@ -81,6 +81,8 @@ function typeLabel(t: string) {
     LOAN_IN: "سلفة/تحصيل (داخل)",
     ORDER_DEPOSIT_IN: "عربون أوردر",
     OTHER_INCOME_IN: "إيراد آخر",
+    CAPITAL_IN: "إيداع رأس مال",
+    OWNER_DRAW_OUT: "مسحوبات شخصية",
   };
   return map[t] || t;
 }

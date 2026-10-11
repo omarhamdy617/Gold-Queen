@@ -43,10 +43,11 @@ function render(data: Data) {
 
   return (
     <div className="space-y-4">
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <div className="app-card p-3"><div className="text-xs text-muted">المبيعات</div><div className="font-bold">{money(summary.salesTotal)}</div></div>
         <div className="app-card p-3"><div className="text-xs text-muted">إجمالي الربح</div><div className="font-bold text-gold-dark">{money(summary.grossProfit)}</div></div>
         <div className="app-card p-3"><div className="text-xs text-muted">المصروفات</div><div className="font-bold">{money(summary.expensesTotal)}</div></div>
+        <div className="app-card p-3"><div className="text-xs text-muted">إيرادات أخرى</div><div className="font-bold">{money(summary.otherIncomeTotal)}</div></div>
         <div className="app-card p-3"><div className="text-xs text-muted">صافي الربح</div><div className={`font-bold ${summary.netProfit >= 0 ? "text-green-700" : "text-red-600"}`}>{money(summary.netProfit)}</div></div>
       </div>
 
@@ -64,6 +65,14 @@ function render(data: Data) {
         </div>
         {cashFlow.adjustments > 0 && (
           <div className="text-[11px] text-muted">+ {money(cashFlow.adjustments)} تسويات يدوية على الخزينة في الفترة دي (اتجاهها زيادة أو نقصان مش متسجل بشكل منفصل).</div>
+        )}
+        {(cashFlow.capitalIn > 0 || cashFlow.ownerDraws > 0) && (
+          <div className="text-[11px] text-muted">
+            فلوس صاحب الشغل (مش محسوبة فوق): رأس مال داخل {money(cashFlow.capitalIn)} · مسحوبات شخصية {money(cashFlow.ownerDraws)}
+            {cashFlow.ownerDraws > Math.max(summary.netProfit, 0) && (
+              <span className="text-red-600"> - المسحوبات في الفترة دي أكبر من صافي الربح بـ {money(cashFlow.ownerDraws - Math.max(summary.netProfit, 0))}</span>
+            )}
+          </div>
         )}
       </div>
 

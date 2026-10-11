@@ -47,7 +47,13 @@ export const cashTxTypeEnum = pgEnum("cash_tx_type", [
   "ORDER_DEPOSIT_IN",
   // إيراد عام مش ناتج من بيع أو تحصيل أوردر أو تحصيل من عميل/تاجر - شاشة "الإيرادات" الجديدة
   "OTHER_INCOME_IN",
+  // فلوس صاحب الشغل نفسه داخلة كرأس مال، وفلوس بيسحبها لنفسه من الشغل - شاشة "رأس المال والمسحوبات".
+  // نوعين مستقلين عن ADJUSTMENT (تسوية الجرد) وعن EXPENSE_OUT عمدًا: المسحوبات مش مصروف تشغيل
+  // (لو اتسجلت كمصروف كانت هتقلل صافي الربح غلط)، ورأس المال مش إيراد (لو اتسجل كإيراد كان هيظهر ربح وهمي).
+  "CAPITAL_IN",
+  "OWNER_DRAW_OUT",
 ]);
+export const capitalMovementKindEnum = pgEnum("capital_movement_kind", ["CAPITAL_IN", "OWNER_DRAW"]);
 // أنواع حركات السلف: سلّفنا حد فلوس (بتاخد من الخزينة) / استلفنا إحنا من حد (بتضيف للخزينة) /
 // استرجعنا فلوس كنا سلّفناها (بتضيف للخزينة) / رجّعنا فلوس كنا مستلفينها (بتاخد من الخزينة)
 export const loanTxTypeEnum = pgEnum("loan_tx_type", ["LOAN_GIVEN", "LOAN_TAKEN", "REPAYMENT_RECEIVED", "REPAYMENT_PAID"]);
@@ -699,6 +705,29 @@ export const income = pgTable("income", {
     .references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+// --------------------------------------------------------------------------
+// رأس المال والمسحوبات - فلوس صاحب الشغل الداخلة (رأس مال) والخارجة لنفسه (مسحوبات). جدول منفصل
+// (زي المصروفات والإيرادات) بدل الاعتماد على سجل الخزينة لوحده، عشان حذف حركة اتسجلت غلط يشيلها من
+// الإجماليات فعلًا، وأثرها في الخزينة يتعكس بحركة تسوية موثّقة (نفس أسلوب حذف المصروف بالظبط).
+// --------------------------------------------------------------------------
+export const capitalMovements = pgTable(
+  "capital_movements",
+  {
+    id: cuid(),
+    kind: capitalMovementKindEnum("kind").notNull(),
+    amount: money("amount").notNull(),
+    paymentMethodId: text("payment_method_id")
+      .notNull()
+      .references(() => paymentMethods.id),
+    note: text("note"),
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("capital_movements_created_idx").on(t.createdAt)]
+);
 
 // --------------------------------------------------------------------------
 // السلف - رصيد تراكمي لأي شخص (موظف أو غيره)، وممكن كمان "نستلف" إحنا من حد

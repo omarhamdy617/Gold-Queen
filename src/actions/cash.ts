@@ -31,7 +31,20 @@ export async function createPaymentMethodWithDrawer(name: string) {
 }
 
 export async function adjustCashDrawer(paymentMethodId: string, amount: number, note: string) {
+  try {
+    return await adjustCashDrawerInner(paymentMethodId, amount, note);
+  } catch (e) {
+    return toActionError(e, "تعذر حفظ التسوية");
+  }
+}
+
+async function adjustCashDrawerInner(paymentMethodId: string, amount: number, note: string) {
   await requirePermission("cash.adjust");
+  // سبب التسوية بقى إلزامي - قبل كده خانة "السبب" كانت اختيارية فعليًا، وفيه تسويات اتسجلت في الإنتاج
+  // من غير أي سبب ("تسوية إضافة: " فاضية)، فمستحيل بعد كده تعرف هي كانت تصحيح جرد ولا رأس مال ولا إيه.
+  if (!note?.trim()) throw new Error("اكتب سبب التسوية - مطلوب عشان تقدر تعرف بعدين الحركة دي كانت ليه");
+  if (!Number.isFinite(amount) || amount === 0) throw new Error("المبلغ لازم يكون رقم مش صفر (بالسالب للخصم)");
+  note = note.trim();
   const session = await requireSession();
   await db.transaction(async (tx) => {
     await postCashByPaymentMethod(tx, paymentMethodId, "ADJUSTMENT", Math.abs(amount), {

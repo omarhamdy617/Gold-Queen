@@ -45,6 +45,11 @@ export async function buildFullBackup() {
     returnItems: schema.returnItems,
     expenseCategories: schema.expenseCategories,
     expenses: schema.expenses,
+    // جدولين الإيرادات (من دفعة 23) كانوا ناقصين من هنا - نفس غلطة الـ6 جداول اللي فوق بالظبط اتكررت.
+    // أي جدول جديد في schema.ts لازم يتضاف هنا كمان، وإلا النسخة الاحتياطية بتضيّعه من غير أي تحذير.
+    incomeCategories: schema.incomeCategories,
+    income: schema.income,
+    capitalMovements: schema.capitalMovements,
     loanAccounts: schema.loanAccounts,
     loanTransactions: schema.loanTransactions,
     auditLogs: schema.auditLogs,
